@@ -2,7 +2,7 @@ import time
 from typing import Tuple, List, Dict, Any, Union
 import numpy as np
 import numpy.typing as npt
-from utils import *
+from train_utils import *
 from neural.classifier import DiscreteClassifier, make_data_loader
 from torch.utils.data import DataLoader
 

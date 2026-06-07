@@ -1,3 +1,5 @@
+from statistics import mode
+
 import numpy as np
 import libemg
 from os import walk
