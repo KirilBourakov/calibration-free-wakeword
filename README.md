@@ -1,4 +1,6 @@
 setup: run pip install -e libemg to get local version of libemg as a dep.
 
+
 1DMCI: code from https://github.com/eeddy/1DMCI. 1D continous control
+
 DiscreteMCI: code from https://github.com/eeddy/DiscreteMCI. No calibration discrete gesture detection.
