@@ -1,0 +1,4 @@
+[submodule "libemg"]
+	path = libemg
+	url = https://github.com/KirilBourakov/libemg.git
+	branch = discrete_CHI
