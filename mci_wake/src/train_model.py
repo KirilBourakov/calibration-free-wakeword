@@ -93,37 +93,43 @@ def prepare_datasets(
     train_emg_final: npt.NDArray[Any] = np.hstack([train_emg, adl_train])
     test_labels_final: npt.NDArray[Any] = np.hstack([test_labels, np.zeros(len(adl_test))])
     test_emg_final: npt.NDArray[Any] = np.hstack([test_emg, adl_test])
-    
-    return train_emg_final, train_labels_final, test_emg_final, test_labels_final
+    from neural.classifier import DiscreteClassifier, DiscreteClassifierConfig, make_data_loader
 
-def train_model(
-    train_emg: npt.NDArray[Any], 
-    train_labels: npt.NDArray[Any], 
-    test_emg: npt.NDArray[Any], 
-    test_labels: npt.NDArray[Any], 
-    model_type: str = "GRU", 
-    layers: int = 3
-) -> DiscreteClassifier:
-    """Initializes and trains the DiscreteClassifier using the provided datasets.
+    ...
 
-    Args:
-        train_emg: Features for the training set.
-        train_labels: Labels for the training set.
-        test_emg: Features for the testing set.
-        test_labels: Labels for the testing set.
-        model_type: The type of recurrent model (e.g., 'GRU', 'LSTM'). Defaults to "GRU".
-        layers: The number of temporal layers in the model. Defaults to 3.
+    def train_model(
+        train_emg: npt.NDArray[Any], 
+        train_labels: npt.NDArray[Any], 
+        test_emg: npt.NDArray[Any], 
+        test_labels: npt.NDArray[Any], 
+        model_type: str = "GRU", 
+        layers: int = 3
+    ) -> DiscreteClassifier:
+        """Initializes and trains the DiscreteClassifier using the provided datasets.
 
-    Returns:
-        DiscreteClassifier: The trained classifier instance.
-    """
-    print("Fitting Discrete Classifier...")
-    classifier = DiscreteClassifier(train_emg[0].shape, type=model_type, temporal_layers=layers, file_name='Discrete_' + str(time.time()))
-    tr_dl: DataLoader = make_data_loader(train_emg, train_labels)
-    te_dl: DataLoader = make_data_loader(test_emg, test_labels)
-    classifier.fit(tr_dl, te_dl, learning_rate=1e-3, epochs=100)
-    return classifier
+        Args:
+            train_emg: Features for the training set.
+            train_labels: Labels for the training set.
+            test_emg: Features for the testing set.
+            test_labels: Labels for the testing set.
+            model_type: The type of recurrent model (e.g., 'GRU', 'LSTM'). Defaults to "GRU".
+            layers: The number of temporal layers in the model. Defaults to 3.
 
+        Returns:
+            DiscreteClassifier: The trained classifier instance.
+        """
+        print("Fitting Discrete Classifier...")
+        config = DiscreteClassifierConfig(
+            emg_size=train_emg[0].shape,
+            type=model_type,
+            temporal_layers=layers,
+            file_name='Discrete_' + str(time.time())
+        )
+        classifier = DiscreteClassifier(config)
+        tr_dl: DataLoader = make_data_loader(train_emg, train_labels)
+        te_dl: DataLoader = make_data_loader(test_emg, test_labels)
+        classifier.fit(tr_dl, te_dl, learning_rate=1e-3, epochs=100)
+        return classifier
 def main() -> None:
     """Main execution pipeline for training the model."""
     # Parameters:

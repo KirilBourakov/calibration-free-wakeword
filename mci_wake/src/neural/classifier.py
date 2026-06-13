@@ -4,19 +4,38 @@ import torch
 import numpy as np
 import random
 import pickle
+
+from pydantic import Field
+from pydantic.dataclasses import dataclass
 from torch.utils.data import DataLoader, Dataset
+
+@dataclass
+class DiscreteClassifierConfig:
+    emg_size: tuple[int, int, int] = (32, 8, 10)
+    temporal_hidden_size: int = 128
+    temporal_layers: int = 3
+    mlp_layers: list[int] = Field(default_factory=lambda: [128, 64, 32])
+    n_classes: int = 6
+    type: str = 'GRU'
+    conv_kernel_sizes: list[int] = Field(default_factory=lambda: [3, 3, 3])
+    conv_out_channels: list[int] = Field(default_factory=lambda: [16, 32, 64])
+
+    @property
+    def file_name(self):
+        return f"ADL_{self.type}"
 
 """
 This is a basic Discrete classifier that goes from EMG to prediction. It uses cross entropy loss to 
 optimize its performance on predicting the correct active class.
 """
 class DiscreteClassifier(nn.Module):
-    def __init__(self, emg_size, file_name=None, temporal_hidden_size=128, temporal_layers=3, mlp_layers=[128, 64, 32], n_classes=6, type='GRU', conv_kernel_sizes = [3, 3, 3], conv_out_channels=[16, 32, 64]):
+    def __init__(self, config: DiscreteClassifierConfig):
         super().__init__()
         
         fix_random_seed(0)
         
-        self.file_name = file_name
+        self.config = config
+        self.file_name = config.file_name
         self.log = {
             'tr_loss': [],
             'te_loss': [],
@@ -30,38 +49,38 @@ class DiscreteClassifier(nn.Module):
         dropout = 0.2 
 
         self.conv_layers = nn.ModuleList()
-        in_channels = emg_size[1]  # Channels in EMG signal
-        for i in range(len(conv_out_channels)):
-            self.conv_layers.append(nn.Conv1d(in_channels=in_channels, out_channels=conv_out_channels[i], kernel_size=conv_kernel_sizes[i], padding='same'))
-            self.conv_layers.append(nn.BatchNorm1d(conv_out_channels[i]))
+        in_channels = config.emg_size[1]  # Channels in EMG signal
+        for i in range(len(config.conv_out_channels)):
+            self.conv_layers.append(nn.Conv1d(in_channels=in_channels, out_channels=config.conv_out_channels[i], kernel_size=config.conv_kernel_sizes[i], padding='same'))
+            self.conv_layers.append(nn.BatchNorm1d(config.conv_out_channels[i]))
             self.conv_layers.append(nn.ReLU())
             self.conv_layers.append(nn.MaxPool1d(kernel_size=2))
             self.conv_layers.append(nn.Dropout(dropout))
-            in_channels = conv_out_channels[i] 
+            in_channels = config.conv_out_channels[i] 
 
-        spoof_emg_input = torch.zeros((1, *emg_size))
+        spoof_emg_input = torch.zeros((1, *config.emg_size))
         conv_out = self.forward_conv(spoof_emg_input)
         conv_out_size = conv_out.shape[-1] 
 
         # Set the temporal feature extraction piece
-        if type == 'LSTM':
-            self.temporal = nn.LSTM(conv_out_size, temporal_hidden_size, num_layers=temporal_layers, batch_first=True, dropout=dropout)
-        elif type == 'BILSTM':
-            self.temporal = nn.LSTM(conv_out_size, temporal_hidden_size, num_layers=temporal_layers, batch_first=True, dropout=dropout, bidirectional=True)
-        elif type == 'RNN':
-            self.temporal = nn.RNN(conv_out_size, temporal_hidden_size, num_layers=temporal_layers, batch_first=True, dropout=dropout, nonlinearity='relu')
-        elif type == 'GRU':
-            self.temporal = nn.GRU(conv_out_size, temporal_hidden_size, num_layers=temporal_layers, batch_first=True, dropout=dropout)
+        if config.type == 'LSTM':
+            self.temporal = nn.LSTM(conv_out_size, config.temporal_hidden_size, num_layers=config.temporal_layers, batch_first=True, dropout=dropout)
+        elif config.type == 'BILSTM':
+            self.temporal = nn.LSTM(conv_out_size, config.temporal_hidden_size, num_layers=config.temporal_layers, batch_first=True, dropout=dropout, bidirectional=True)
+        elif config.type == 'RNN':
+            self.temporal = nn.RNN(conv_out_size, config.temporal_hidden_size, num_layers=config.temporal_layers, batch_first=True, dropout=dropout, nonlinearity='relu')
+        elif config.type == 'GRU':
+            self.temporal = nn.GRU(conv_out_size, config.temporal_hidden_size, num_layers=config.temporal_layers, batch_first=True, dropout=dropout)
         else:
             print("Invalid selection of model type.")
             exit(1)
 
         emg_output_shape = self.forward_temporal(conv_out).shape[-1]
 
-        self.initial_layer = nn.Linear(emg_output_shape, mlp_layers[0])
-        self.layer1 = nn.Linear(mlp_layers[0], mlp_layers[1])
-        self.layer2 = nn.Linear(mlp_layers[1], mlp_layers[2])
-        self.output_layer = nn.Linear(mlp_layers[-1], n_classes) 
+        self.initial_layer = nn.Linear(emg_output_shape, config.mlp_layers[0])
+        self.layer1 = nn.Linear(config.mlp_layers[0], config.mlp_layers[1])
+        self.layer2 = nn.Linear(config.mlp_layers[1], config.mlp_layers[2])
+        self.output_layer = nn.Linear(config.mlp_layers[-1], config.n_classes) 
         self.relu = nn.ReLU()
 
     def forward_conv(self, x):
