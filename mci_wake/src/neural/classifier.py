@@ -236,9 +236,11 @@ class DL_input_data(Dataset):
 
 def make_data_loader(windows, classes, batch_size=64, shuffle=True):
     obj = DL_input_data(windows, classes)
-    dl = DataLoader(obj,
-    batch_size=batch_size,
-    shuffle=shuffle) 
+    dl = DataLoader(
+        obj,
+        batch_size=batch_size,
+        shuffle=shuffle
+    )
     return dl
 
 def fix_random_seed(seed_value, use_cuda=True):

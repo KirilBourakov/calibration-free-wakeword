@@ -10,11 +10,11 @@ class DiscreteLightningModule(light.LightningModule):
     def __init__(self, defn: DiscreteClassifier | DiscreteClassifierConfig):
         super().__init__()
         self.save_hyperparameters()
-        self.model = defn if isinstance(defn, DiscreteClassifier) else DiscreteClassifier(defn)
-        self.config = self.model.config
+        self.internals: DiscreteClassifier = defn if isinstance(defn, DiscreteClassifier) else DiscreteClassifier(defn)
+        self.config = self.internals.config
 
     def forward(self, x, lengths=None):
-        return self.model.forward_once(x, lengths)
+        return self.internals.forward_once(x, lengths)
 
     def training_step(self, batch, batch_idx):
         x, y, lengths = batch

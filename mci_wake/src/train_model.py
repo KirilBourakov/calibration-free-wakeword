@@ -1,9 +1,12 @@
 import time
-from typing import Tuple, Any
+from typing import Tuple, Any, cast
 import numpy as np
 import numpy.typing as npt
+from lightning import Trainer
+
+from neural.lightning_module import DiscreteLightningModule
 from train_utils import *
-from neural.classifier import DiscreteClassifier, make_data_loader
+from neural.classifier import DiscreteClassifier, make_data_loader, DiscreteClassifierConfig
 from torch.utils.data import DataLoader
 
 from train_utils import load_disco_adls, load_epn_data, get_features
@@ -102,8 +105,7 @@ def train_model(
     train_labels: npt.NDArray[Any],
     test_emg: npt.NDArray[Any],
     test_labels: npt.NDArray[Any],
-    model_type: str = "GRU",
-    layers: int = 3
+    model_config: DiscreteClassifierConfig = DiscreteClassifierConfig()
 ) -> DiscreteClassifier:
     """Initializes and trains the DiscreteClassifier using the provided datasets.
 
@@ -112,26 +114,26 @@ def train_model(
         train_labels: Labels for the training set.
         test_emg: Features for the testing set.
         test_labels: Labels for the testing set.
-        model_type: The type of recurrent model (e.g., 'GRU', 'LSTM'). Defaults to "GRU".
-        layers: The number of temporal layers in the model. Defaults to 3.
+        model_config: the model configuration
 
     Returns:
         DiscreteClassifier: The trained classifier instance.
     """
     print("Fitting Discrete Classifier...")
-    classifier = DiscreteClassifier(train_emg[0].shape, type=model_type, temporal_layers=layers, file_name='Discrete_' + str(time.time()))
     tr_dl: DataLoader = make_data_loader(train_emg, train_labels)
     te_dl: DataLoader = make_data_loader(test_emg, test_labels)
-    classifier.fit(tr_dl, te_dl, learning_rate=1e-3, epochs=100)
-    return classifier
+
+    model = DiscreteLightningModule(model_config)
+    trainer = Trainer(max_epochs=10, accelerator="auto", devices="auto")
+    trainer.fit(model, train_dataloaders=tr_dl, val_dataloaders=te_dl)
+
+    return cast(DiscreteLightningModule, trainer.lightning_module).internals
 
 def main() -> None:
     """Main execution pipeline for training the model."""
     # Parameters:
     WINDOW_SIZE: int = 10 
     INCREMENT_SIZE: int = 5
-    MODEL: str = "GRU"
-    LAYERS: int = 3 
     TRAIN_SPLIT: float = 0.95
     TEST_SPLIT: float = 0.05
 
@@ -147,7 +149,7 @@ def main() -> None:
     )
 
     # 4. Train
-    train_model(train_emg, train_labels, test_emg, test_labels, MODEL, LAYERS)
+    train_model(train_emg, train_labels, test_emg, test_labels)
 
 if __name__ == "__main__":
     main()
