@@ -12,6 +12,6 @@ from libemg.discrete import DiscreteControl
 if __name__ == "__main__":
     _, sm = myo_streamer()
     odh = OnlineDataHandler(sm)
-    model = torch.load(r'E:\Programming\Projects\reaserch\new_wakeword\mci_wake\other\Discrete.model', map_location=torch.device('cpu'), weights_only=False)
+    model = torch.load(r'E:\Programming\Projects\reaserch\new_wakeword\mci_wake\other\base.model', map_location=torch.device('cpu'), weights_only=False)
     discrete = DiscreteControl(odh, 10, 5, model)
     discrete.run()

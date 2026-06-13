@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import libemg
 from os import walk
@@ -53,7 +55,8 @@ def extract_data(data: Dict[str, Any]) -> Tuple[Optional[npt.NDArray[Any]], Opti
         end_idx = len(emg)
     return emg[start_idx:end_idx], quat[int(start_idx * 0.25):int(end_idx*0.25)], label, int(mode(myo_labels))
     
-def get_data(
+def load_epn_data(
+    path: Path | str,
     gesture_sets: List[str] = ['trainingSamples', 'testingSamples'],
     subjects: List[int] = list(range(1, 307)), 
     subject_types: List[str] = ['training', 'testing']
@@ -61,6 +64,7 @@ def get_data(
     """Loads and organizes the EMG dataset from JSON files or a cached pickle.
 
     Args:
+        path: path to the root of the dataset
         gesture_sets: List of keys in the JSON to load samples from. Defaults to ['trainingSamples', 'testingSamples'].
         subjects: List of subject IDs to load. Defaults to range(1, 307).
         subject_types: List of directories ('training', 'testing') to search in. Defaults to ['training', 'testing'].
@@ -70,6 +74,8 @@ def get_data(
             A tuple of dictionaries for (emg_data, imu_data, labels, myo_labels), 
             each keyed by the subject_types.
     """
+    path = Path(path)
+
     # Check if pkl file exists (to save time)
     if os.path.exists('dataset.pkl') and len(subjects) > 300:
         with open('dataset.pkl', 'rb') as f:
@@ -93,7 +99,7 @@ def get_data(
         for sub in subjects:
             if sub % 10 == 0:
                 print("Subject " + str(sub) + "...")
-            f = open('EMG-EPN612/' + t + 'JSON/user' + str(sub) + '/user' + str(sub) + '.json', encoding="utf8")
+            f = open(path / (t + 'JSON') / ('user' + str(sub)) / ('user' + str(sub) + '.json'), encoding="utf8")
             jd = json.load(f)
             for s in gesture_sets:
                 for sample in jd[s]: 
@@ -111,15 +117,16 @@ def get_data(
 
     return emg_data, imu_data, labels, myo_labels
 
-def load_disco_adls() -> npt.NDArray[np.object_]:
+def load_disco_adls(path: Path | str) -> npt.NDArray[np.object_]:
     """Loads ADL (Activities of Daily Living) dataset and windows it into segments.
 
+    Args:
+        path: path to ADL dataset
     Returns:
         npt.NDArray[np.object_]: An object array containing windowed ADL EMG signals.
     """
     adl_files = []
     for s in range(1, 16):
-        path = 'DiscoDataset/S' + str(s) + '/ADL/'
         files = next(walk(path), (None, None, []))[2]
         for f in files:
             adl_files.append(path + f)

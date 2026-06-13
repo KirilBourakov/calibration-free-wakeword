@@ -1,10 +1,14 @@
 import time
-from typing import Tuple, List, Dict, Any, Union
+from typing import Tuple, Any
 import numpy as np
 import numpy.typing as npt
-from train_utils import *
 from neural.classifier import DiscreteClassifier, make_data_loader
 from torch.utils.data import DataLoader
+
+from train_utils import load_disco_adls, load_epn_data, get_features
+
+EPN_DATA = r"E:\Programming\Projects\reaserch\new_wakeword\mci_wake\other\EMG-EPN612"
+ADL_DATA = r"E:\Programming\Projects\reaserch\new_wakeword\mci_wake\other\DiscoDataset"
 
 def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[np.object_]]:
     """Loads ADL and gesture EMG data from the dataset.
@@ -15,9 +19,9 @@ def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDAr
             - labels_all: Combined training and testing labels.
             - adl_data: Loaded ADL EMG data.
     """
-    adl_data: npt.NDArray[np.object_] = load_disco_adls()
+    adl_data: npt.NDArray[np.object_] = load_disco_adls(ADL_DATA)
     # Extract all data 
-    emg, imu, labels, myo_labels = get_data()
+    emg, imu, labels, myo_labels = load_epn_data(EPN_DATA)
     training_emg = np.array(emg['training'], dtype='object')
     testing_emg = np.array(emg['testing'], dtype='object')
     training_labels = np.array(labels['training'])
