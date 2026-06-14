@@ -3,6 +3,7 @@ from typing import Tuple, Any, cast
 import numpy as np
 import numpy.typing as npt
 from lightning import Trainer
+from lightning.pytorch.callbacks import ModelCheckpoint
 
 from neural.lightning_module import DiscreteLightningModule
 from train_utils import *
@@ -33,6 +34,10 @@ def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDAr
 
     emg_data_all: npt.NDArray[np.object_] = np.hstack([training_emg, testing_emg])
     labels_all: npt.NDArray[Any] = np.hstack([training_labels, testing_labels])
+    
+    print(f"Loaded {len(emg_data_all)} gesture samples from EPN dataset.")
+    print(f"Loaded {len(adl_data)} ADL noise segments.")
+    
     return emg_data_all, labels_all, adl_data
 
 def preprocess_nm_data(emg_data_all: npt.NDArray[np.object_], labels_all: npt.NDArray[Any]) -> npt.NDArray[np.object_]:
@@ -98,6 +103,9 @@ def prepare_datasets(
     test_labels_final: npt.NDArray[Any] = np.hstack([test_labels, np.zeros(len(adl_test))])
     test_emg_final: npt.NDArray[Any] = np.hstack([test_emg, adl_test])
     
+    print(f"Final training set: {len(train_emg_final)} samples ({len(train_labels)} gestures + {len(adl_train)} ADL)")
+    print(f"Final testing set: {len(test_emg_final)} samples ({len(test_labels)} gestures + {len(adl_test)} ADL)")
+    
     return train_emg_final, train_labels_final, test_emg_final, test_labels_final
 
 def train_model(
@@ -124,7 +132,22 @@ def train_model(
     te_dl: DataLoader = make_data_loader(test_emg, test_labels)
 
     model = DiscreteLightningModule(model_config)
-    trainer = Trainer(max_epochs=10, accelerator="auto", devices="auto")
+    
+    checkpoint_callback = ModelCheckpoint(
+        monitor="val_acc",
+        filename="best-model-{epoch:02d}-{val_acc:.2f}",
+        save_top_k=1,
+        mode="max",
+        verbose=True,
+        save_last=True,
+    )
+
+    trainer = Trainer(
+        max_epochs=10,
+        accelerator="auto", 
+        devices="auto",
+        callbacks=[checkpoint_callback]
+    )
     trainer.fit(model, train_dataloaders=tr_dl, val_dataloaders=te_dl)
 
     return cast(DiscreteLightningModule, trainer.lightning_module).internals

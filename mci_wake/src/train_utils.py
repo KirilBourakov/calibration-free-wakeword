@@ -125,11 +125,15 @@ def load_disco_adls(path: Path | str) -> npt.NDArray[np.object_]:
     Returns:
         npt.NDArray[np.object_]: An object array containing windowed ADL EMG signals.
     """
+    path = Path(path)
     adl_files = []
     for s in range(1, 16):
-        files = next(walk(path), (None, None, []))[2]
+        sub_path = path / f"S{s}" / "ADL"
+        if not sub_path.exists():
+            continue
+        files = next(walk(sub_path), (None, None, []))[2]
         for f in files:
-            adl_files.append(path + f)
+            adl_files.append(str(sub_path / f))
 
     adl_data_list = []
     for af in adl_files:

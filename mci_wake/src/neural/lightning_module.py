@@ -12,6 +12,7 @@ class DiscreteLightningModule(light.LightningModule):
         self.save_hyperparameters()
         self.internals: DiscreteClassifier = defn if isinstance(defn, DiscreteClassifier) else DiscreteClassifier(defn)
         self.config = self.internals.config
+        self.lr = self.config.lr
 
     def forward(self, x, lengths=None):
         return self.internals.forward_once(x, lengths)
@@ -20,7 +21,14 @@ class DiscreteLightningModule(light.LightningModule):
         x, y, lengths = batch
         logits = self(x, lengths)
         loss = cross_entropy(logits, y)
-        acc = (logits.argmax(dim=1) == y).float().mean()
+        
+        preds = logits.argmax(dim=1)
+        acc = (preds == y).float().mean()
+        
+        mask = (y != 0)
+        if mask.any():
+            acc_a = (preds[mask] == y[mask]).float().mean()
+            self.log("train_acc_a", acc_a, prog_bar=True)
 
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_acc", acc, prog_bar=True)
@@ -31,18 +39,27 @@ class DiscreteLightningModule(light.LightningModule):
         x, y, lengths = batch
         logits = self(x, lengths)
         loss = cross_entropy(logits, y)
-        acc = (logits.argmax(dim=1) == y).float().mean()
+        
+        preds = logits.argmax(dim=1)
+        acc = (preds == y).float().mean()
+        
+        mask = y != 0
+        if mask.any():
+            acc_a = (preds[mask] == y[mask]).float().mean()
+            self.log("val_acc_a", acc_a, prog_bar=True)
 
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
+
         def lr_lambda(epoch):
             warmup_epochs = 5
             if epoch < warmup_epochs:
-                return (epoch + 1) / warmup_epochs
+                return epoch / warmup_epochs
             return 0.9 ** (epoch - warmup_epochs)
+
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
         return {
             "optimizer": optimizer,

@@ -19,6 +19,7 @@ class DiscreteClassifierConfig:
     type: str = 'GRU'
     conv_kernel_sizes: list[int] = Field(default_factory=lambda: [3, 3, 3])
     conv_out_channels: list[int] = Field(default_factory=lambda: [16, 32, 64])
+    lr: float = 1e-3
 
     @property
     def file_name(self):
@@ -36,15 +37,6 @@ class DiscreteClassifier(nn.Module):
         
         self.config = config
         self.file_name = config.file_name
-        self.log = {
-            'tr_loss': [],
-            'te_loss': [],
-            'tr_acc': [],
-            'te_acc': [],
-            'tr_acc_a': [],
-            'te_acc_a': [],
-        }
-        self.min_loss = 0
 
         dropout = 0.2 
 
@@ -123,87 +115,6 @@ class DiscreteClassifier(nn.Module):
         else:
             out = out[:,-1,:]
         return out 
-    
-    def _run_epoch(self, device, dl, optimizer, loss_function, train=False):
-        loss_arr = []
-        acc_arr = []
-        acc_a_arr = [] 
-        for data, labels, lengths in dl:
-            optimizer.zero_grad()
-            data = data.to(device)
-            labels = labels.to(device)
-            lengths = lengths.to(device)
-           
-            output = self.forward_once(data, lengths)
-
-            loss = loss_function(output, labels) 
-            loss_arr.append(loss.item())
-
-            acc = sum(torch.argmax(output,1) == labels)/labels.shape[0]
-            acc_arr.append(acc.item())
-            acc_a = sum((torch.argmax(output, 1) == labels) & (labels != 0)) / sum(labels != 0)
-            acc_a_arr.append(acc_a.item())
-            
-            if train:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.parameters(), 1) # Needs to be on for Transformer 
-                optimizer.step()
-
-        return loss_arr, acc_arr, acc_a_arr
-
-    def fit(self, tr_dl, te_dl, learning_rate=1e-4, epochs=20):
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.to(device)
-        # get the optimizer and loss function ready
-        optimizer = optim.Adam(self.parameters(), lr=learning_rate,)
-        
-        # Learning rate scheduler with warmup
-        def lr_lambda(epoch):
-            warmup_epochs = 5
-            if epoch < warmup_epochs:
-                return epoch / warmup_epochs
-            return 0.9 ** (epoch - warmup_epochs)
-        
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
-        loss_function = nn.CrossEntropyLoss()
-
-        # now start the training
-        for epoch in range(0, epochs):
-            #training set
-            self.train()
-            tr_loss, tr_acc, tr_acc_a = self._run_epoch(device, tr_dl, optimizer, loss_function, train=True)
-            self.eval()
-            te_loss, te_acc, te_acc_a = self._run_epoch(device, te_dl, optimizer, loss_function, train=False)
-
-            if np.mean(te_acc) > self.min_loss:
-                print("Improved testing accuracy... Saving model.")
-                torch.save(self, self.file_name + '.model')
-                self.min_loss = np.mean(te_acc)
-
-            scheduler.step()
-
-            # Log everything 
-            self.log['tr_loss'].append(np.mean(tr_loss))
-            self.log['te_loss'].append(np.mean(te_loss))
-            self.log['tr_acc'].append(np.mean(tr_acc))
-            self.log['te_acc'].append(np.mean(te_acc))
-            self.log['tr_acc_a'].append(np.mean(tr_acc_a))
-            self.log['te_acc_a'].append(np.mean(te_acc_a))
-
-            print(f"{epoch}: trloss:{np.mean(tr_loss):.4f} tracc:{np.mean(tr_acc):.4f} tracc_a:{np.mean(tr_acc_a):.4f} teloss:{np.mean(te_loss):.4f} teacc:{np.mean(te_acc):.4f} teacc_a:{np.mean(te_acc_a):.4f}")
-
-        self.eval()
-
-        if self.file_name is not None:
-            pickle.dump(self.log, open(self.file_name + '.pkl', 'wb'))
-
-    def predict(self, x, device='cpu'):
-        self.to(device)
-        if type(x) != torch.Tensor:
-            x = torch.tensor(x, dtype=torch.float32)
-        preds = self.forward_once(x.to(device))
-        return np.array([p.argmax().item() for p in preds])
 
 class DL_input_data(Dataset):
     def __init__(self, windows, classes):
