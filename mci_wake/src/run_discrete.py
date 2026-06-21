@@ -28,7 +28,7 @@ if __name__ == "__main__":
     _, sm = myo_streamer()
     odh = OnlineDataHandler(sm)
 
-    checkpoint_path = "checkpoints/Discrete-epoch=08-val_acc=0.94.ckpt"
+    checkpoint_path = r"E:\Programming\Projects\reaserch\new_wakeword\mci_wake\src\lightning_logs\version_0\checkpoints\best-model-epoch=07-val_acc=0.98.ckpt"
     lightning_model = DiscreteLightningModule.load_from_checkpoint(checkpoint_path)
     model = lightning_model.internals
     model.eval()
