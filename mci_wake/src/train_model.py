@@ -1,4 +1,5 @@
-from train_utils import preprocess_nm_data, load_raw_data, prepare_datasets
+from train_utils import preprocess_nm_data, load_raw_data, prepare_datasets, train_model
+
 
 def main() -> None:
     """Main execution pipeline for training the model."""

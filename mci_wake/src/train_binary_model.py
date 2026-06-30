@@ -6,7 +6,7 @@ from neural.classifier import DiscreteClassifierConfig
 
 # Target gesture to recognize. Everything else will be classified as 'other' (0).
 # Available gestures in dataset: 'fist', 'waveIn', 'waveOut', 'open', 'pinch'
-TARGET_GESTURE = 'pinch'
+TARGET_GESTURE = 'fist'
 
 def main() -> None:
     """Main execution pipeline for training the binary gesture model."""

@@ -7,6 +7,8 @@ import pickle
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass
+from torch import Tensor
+from torch.nn.functional import softmax
 from torch.utils.data import DataLoader, Dataset
 
 @dataclass
@@ -74,6 +76,14 @@ class DiscreteClassifier(nn.Module):
         self.layer2 = nn.Linear(config.mlp_layers[1], config.mlp_layers[2])
         self.output_layer = nn.Linear(config.mlp_layers[-1], config.n_classes) 
         self.relu = nn.ReLU()
+
+    def predict(self, gest: Tensor, device='cpu') -> tuple[int, float, torch.Tensor]:
+        g_tensor = torch.tensor(np.expand_dims(np.array(gest, dtype=np.float32), axis=0), dtype=torch.float32).to(device)
+        with torch.no_grad():
+            output = self.forward_once(g_tensor)
+            pred = output.argmax(dim=1).item()
+            prob = softmax(output, dim=1).max().item()
+        return pred, prob, output
 
     def forward_conv(self, x):
         batch_size, seq_len, channels, samples = x.shape
