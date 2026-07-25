@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mci_wake"
+version = "0.1.0"
+description = "Calibration-free EMG wake-word detection"
+requires-python = ">=3.9"
+dependencies = [
+    "torch",
+    "lightning",
+    "numpy",
+    "pydantic",
+    "pygame",
+    "pyautogui",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

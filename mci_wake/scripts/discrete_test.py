@@ -101,7 +101,7 @@ class Evaluation:
                 font = pygame.font.Font(None, 50)
                 text = font.render(label, True, (0, 0, 0))
                 screen.blit(text, (200, 10))
-                img = pygame.image.load('Other/Images/' + self.classes[id] + '.png')
+                img = pygame.image.load('other/Images/' + self.classes[id] + '.png')
                 screen.blit(img,(75,65))
                 self.log['trial'].append(self.trial)
             else:
@@ -118,5 +118,6 @@ class Evaluation:
 
         pygame.quit()
 
-eval = Evaluation()
-eval.start_game()
+if __name__ == "__main__":
+    eval = Evaluation()
+    eval.start_game()

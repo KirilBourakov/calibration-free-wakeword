@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 from pydantic import TypeAdapter
 
-from neural.classifier import DiscreteClassifierConfig, DiscreteClassifier
+from mci_wake.neural.classifier import DiscreteClassifierConfig, DiscreteClassifier
 
 _CONFIG_NAME = 'config.json'
 _STATE_DICT_NAME = 'state.pt'
@@ -31,5 +31,3 @@ def save(classifier: DiscreteClassifier, path: str | Path) -> None:
         file.write(adapt.dump_json(classifier.config, indent=2))
 
     torch.save(classifier.state_dict(), path / _STATE_DICT_NAME)
-
-

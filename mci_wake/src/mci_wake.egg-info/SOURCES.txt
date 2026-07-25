@@ -1,0 +1,15 @@
+pyproject.toml
+src/mci_wake/__init__.py
+src/mci_wake.egg-info/PKG-INFO
+src/mci_wake.egg-info/SOURCES.txt
+src/mci_wake.egg-info/dependency_links.txt
+src/mci_wake.egg-info/requires.txt
+src/mci_wake.egg-info/top_level.txt
+src/mci_wake/data/__init__.py
+src/mci_wake/data/train_utils.py
+src/mci_wake/neural/__init__.py
+src/mci_wake/neural/classifier.py
+src/mci_wake/neural/io.py
+src/mci_wake/neural/lightning_module.py
+src/mci_wake/orchestration/__init__.py
+src/mci_wake/orchestration/wake_detect.py

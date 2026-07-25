@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: mci_wake
+Version: 0.1.0
+Summary: Calibration-free EMG wake-word detection
+Requires-Python: >=3.9
+Requires-Dist: torch
+Requires-Dist: lightning
+Requires-Dist: numpy
+Requires-Dist: pydantic
+Requires-Dist: pygame
+Requires-Dist: pyautogui
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"

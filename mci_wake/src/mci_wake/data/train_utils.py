@@ -15,15 +15,15 @@ from typing import Any, List, Dict, Tuple, Optional, Union, cast
 import numpy.typing as npt
 from statistics import mode
 
-from neural.classifier import make_data_loader, DiscreteClassifierConfig, DiscreteClassifier
-from neural.lightning_module import DiscreteLightningModule
+from mci_wake.neural.classifier import make_data_loader, DiscreteClassifierConfig, DiscreteClassifier
+from mci_wake.neural.lightning_module import DiscreteLightningModule
 
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
 
 # dir setup
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-EPN_DATA = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "other", "EMG-EPN612"))
-ADL_DATA = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "other", "DiscoDataset"))
+EPN_DATA = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", "..", "other", "EMG-EPN612"))
+ADL_DATA = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", "..", "other", "DiscoDataset"))
 
 
 def train_model(

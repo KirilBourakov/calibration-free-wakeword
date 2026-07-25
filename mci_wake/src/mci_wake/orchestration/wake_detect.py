@@ -9,7 +9,7 @@ import time
 import statistics
 
 from libemg.data_handler import OnlineDataHandler
-from neural.classifier import DiscreteClassifier
+from mci_wake.neural.classifier import DiscreteClassifier
 
 class ModelState:
     def __init__(
@@ -67,16 +67,16 @@ class WakeDetect:
         The window size (in samples) to use for splitting up each template.
     increment: int
         The increment size (in samples) for the sliding window.
-    model: torch.nn.Module
-        The trained PyTorch model for gesture classification.
+    models: list[DiscreteClassifier]
+        The trained PyTorch models for sequence detection.
     buffer: int, optional
-        The size of the prediction buffer to use for mode filtering. Default is 1.
+        The size of the prediction buffer to use for mode filtering. Default is 5.
     template_size: int, optional
         The size of each EMG template (in samples). Default is 250 (1.5s for the Myo Armband).
     min_template_size: int, optional
-        The minimum number of samples required before starting to make predictions (helps reduce the delay needed between subsequent gestures). Default is 100.
+        The minimum number of samples required before starting to make predictions. Default is 150.
     key_mapping: dict, optional
-        A dictionary mapping gesture names to keyboard keys. Default maps 'Close' to 'c', 'Flexion' to 'f', 'Extension' to 'e', 'Open' to 'o', and 'Pinch' to 'p'.
+        A dictionary mapping gesture names to keyboard keys.
     debug: bool, optional
         If True, enables debug mode with additional print statements. Default is True.
     """
@@ -146,4 +146,4 @@ class WakeDetect:
                         last_step_time = None
                         curr_model = 0
                         print(f"{str(time.time())} reset")
-
+            time.sleep(0.005)

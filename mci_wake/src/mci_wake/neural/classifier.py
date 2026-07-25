@@ -66,8 +66,7 @@ class DiscreteClassifier(nn.Module):
         elif config.type == 'GRU':
             self.temporal = nn.GRU(conv_out_size, config.temporal_hidden_size, num_layers=config.temporal_layers, batch_first=True, dropout=dropout)
         else:
-            print("Invalid selection of model type.")
-            exit(1)
+            raise ValueError(f"Invalid selection of model type '{config.type}'.")
 
         emg_output_shape = self.forward_temporal(conv_out).shape[-1]
 

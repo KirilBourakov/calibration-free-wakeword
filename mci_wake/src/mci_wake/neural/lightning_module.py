@@ -3,7 +3,7 @@ import torch
 from torch.nn.functional import cross_entropy
 from torch.utils.data import DataLoader
 
-from neural.classifier import DiscreteClassifierConfig, DiscreteClassifier, DL_input_data
+from mci_wake.neural.classifier import DiscreteClassifierConfig, DiscreteClassifier, DL_input_data
 
 
 class DiscreteLightningModule(light.LightningModule):

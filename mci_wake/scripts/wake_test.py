@@ -80,7 +80,6 @@ class WakeTest:
                             print(f">> Prediction received: {predicted_label}")
                         
                         # Check if the prediction matches the target gesture
-                        # Mapping: 'c'->'Close', 'e'->'Extension', etc.
                         target_char = self.classes[self.target_id][0].lower()
                         if char == target_char:
                             print(f"SUCCESS: {predicted_label} correctly detected.")

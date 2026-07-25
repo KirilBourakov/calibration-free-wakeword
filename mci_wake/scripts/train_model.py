@@ -1,4 +1,4 @@
-from train_utils import preprocess_nm_data, load_raw_data, prepare_datasets, train_model
+from mci_wake.data.train_utils import preprocess_nm_data, load_raw_data, prepare_datasets, train_model
 
 
 def main() -> None:
