@@ -3,6 +3,7 @@ from mci_wake.data.train_utils import (
     load_raw_data,
     preprocess_nm_data,
     prepare_datasets,
+    prepare_loso_datasets,
     train_model,
 )
 
@@ -11,5 +12,6 @@ __all__ = [
     "load_raw_data",
     "preprocess_nm_data",
     "prepare_datasets",
+    "prepare_loso_datasets",
     "train_model",
 ]

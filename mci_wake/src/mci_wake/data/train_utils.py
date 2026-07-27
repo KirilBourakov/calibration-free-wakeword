@@ -27,11 +27,11 @@ ADL_DATA = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", "..", "other", "
 
 
 def train_model(
-        train_emg: npt.NDArray[Any],
-        train_labels: npt.NDArray[Any],
-        test_emg: npt.NDArray[Any],
-        test_labels: npt.NDArray[Any],
-        model_config: DiscreteClassifierConfig = DiscreteClassifierConfig()
+    train_emg: npt.NDArray[Any],
+    train_labels: npt.NDArray[Any],
+    test_emg: npt.NDArray[Any],
+    test_labels: npt.NDArray[Any],
+    model_config: DiscreteClassifierConfig = DiscreteClassifierConfig()
 ) -> DiscreteClassifier:
     """Initializes and trains the DiscreteClassifier using the provided datasets.
 
@@ -71,30 +71,37 @@ def train_model(
     return cast(DiscreteLightningModule, trainer.lightning_module).internals
 
 
-def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[np.object_]]:
-    """Loads ADL and gesture EMG data from the dataset.
+def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[np.object_]]:
+    """Loads ADL and gesture EMG data from the dataset alongside subject IDs.
 
     Returns:
-        Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[np.object_]]: A tuple containing:
+        Tuple containing:
             - emg_data_all: Combined training and testing EMG data.
             - labels_all: Combined training and testing labels.
+            - subject_ids_all: Combined training and testing subject IDs.
             - adl_data: Loaded ADL EMG data.
     """
     adl_data: npt.NDArray[np.object_] = load_disco_adls(ADL_DATA)
-    # Extract all data
-    emg, imu, labels, myo_labels = load_epn_data(EPN_DATA)
+    emg, imu, labels, myo_labels, subject_ids = load_epn_data(EPN_DATA)
+
     training_emg = np.array(emg['training'], dtype='object')
     testing_emg = np.array(emg['testing'], dtype='object')
     training_labels = np.array(labels['training'])
     testing_labels = np.array(labels['testing'])
 
+    training_subjects = np.array(subject_ids['training'])
+    testing_subjects = np.array(subject_ids['testing'])
+
     emg_data_all: npt.NDArray[np.object_] = np.hstack([training_emg, testing_emg])
     labels_all: npt.NDArray[Any] = np.hstack([training_labels, testing_labels])
+    subject_ids_all: npt.NDArray[Any] = np.hstack([training_subjects, testing_subjects])
 
-    print(f"Loaded {len(emg_data_all)} gesture samples from EPN dataset.")
+    n_subs = len(np.unique(subject_ids_all))
+    print(f"Loaded {len(emg_data_all)} gesture samples from EPN dataset across {n_subs} subjects.")
     print(f"Loaded {len(adl_data)} ADL noise segments.")
 
-    return emg_data_all, labels_all, adl_data
+    return emg_data_all, labels_all, subject_ids_all, adl_data
+
 
 def preprocess_nm_data(emg_data_all: npt.NDArray[np.object_], labels_all: npt.NDArray[Any]) -> npt.NDArray[np.object_]:
     """Randomly clips 'No Motion' segments to introduce variability.
@@ -123,7 +130,7 @@ def prepare_datasets(
         train_split: float = 0.95,
         test_split: float = 0.05
 ) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
-    """Extracts features and splits the data into training and testing sets, including ADL data.
+    """Extracts features and splits the data into training and testing sets proportionally.
 
     Args:
         emg_data_all: The complete set of gesture EMG data samples.
@@ -135,12 +142,10 @@ def prepare_datasets(
         test_split: The proportion of data to use for testing. Defaults to 0.05.
 
     Returns:
-        Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]: A tuple containing:
-            - train_emg: Features for the training set.
-            - train_labels: Labels for the training set.
-            - test_emg: Features for the testing set.
-            - test_labels: Labels for the testing set.
+        Tuple containing (train_emg, train_labels, test_emg, test_labels).
     """
+    print("Warning: prepare_loso_datasets recommended.")
+
     # Extract features
     emg_feats: npt.NDArray[Any] = get_features(emg_data_all, window_size, increment_size, None, None)
     adl_feats: npt.NDArray[Any] = get_features(adl_data, window_size, increment_size, None, None)
@@ -166,6 +171,73 @@ def prepare_datasets(
     return train_emg_final, train_labels_final, test_emg_final, test_labels_final
 
 
+def prepare_loso_datasets(
+    emg_data_all: npt.NDArray[np.object_],
+    labels_all: npt.NDArray[Any],
+    subject_ids_all: npt.NDArray[Any],
+    adl_data: npt.NDArray[np.object_],
+    window_size: int,
+    increment_size: int,
+    test_subject_ids: Optional[List[int]] = None,
+    test_subject_ratio: float = 0.1,
+    random_seed: int = 42,
+) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
+    """Extracts features and splits data using Leave-One-Subject-Out (LOSO) cross-validation logic.
+
+    Ensures that test subjects' gesture data is strictly isolated from the training set,
+    enabling true evaluation of calibration-free generalization to unseen subjects.
+
+    Args:
+        emg_data_all: Complete set of gesture EMG data samples.
+        labels_all: Mapped labels for all samples.
+        subject_ids_all: Subject/User IDs corresponding to each EMG sample.
+        adl_data: ADL noise segments.
+        window_size: Window size for sliding feature extraction.
+        increment_size: Increment step size.
+        test_subject_ids: Specific subject IDs to hold out for testing. If None, randomly picks test_subject_ratio of subjects.
+        test_subject_ratio: Proportion of unique subjects to allocate to test set if test_subject_ids is None.
+        random_seed: Seed for random subject selection.
+
+    Returns:
+        Tuple containing (train_emg, train_labels, test_emg, test_labels).
+    """
+    unique_subjects = np.unique(subject_ids_all)
+    if test_subject_ids is None:
+        rng = np.random.default_rng(random_seed)
+        n_test = max(1, int(len(unique_subjects) * test_subject_ratio))
+        test_subject_ids = list(rng.choice(unique_subjects, size=n_test, replace=False))
+
+    test_mask = np.isin(subject_ids_all, test_subject_ids)
+    train_mask = ~test_mask
+
+    train_emg_raw = emg_data_all[train_mask]
+    train_labels_raw = labels_all[train_mask]
+    test_emg_raw = emg_data_all[test_mask]
+    test_labels_raw = labels_all[test_mask]
+
+    # Extract features
+    train_emg_feats: npt.NDArray[Any] = get_features(train_emg_raw, window_size, increment_size, None, None)
+    test_emg_feats: npt.NDArray[Any] = get_features(test_emg_raw, window_size, increment_size, None, None)
+    adl_feats: npt.NDArray[Any] = get_features(adl_data, window_size, increment_size, None, None)
+
+    # Split ADL noise data proportionally
+    n_adl_train = int(len(adl_feats) * (1.0 - test_subject_ratio))
+    adl_train = adl_feats[:n_adl_train]
+    adl_test = adl_feats[n_adl_train:]
+
+    train_labels_final: npt.NDArray[Any] = np.hstack([train_labels_raw, np.zeros(len(adl_train))])
+    train_emg_final: npt.NDArray[Any] = np.hstack([train_emg_feats, adl_train])
+    test_labels_final: npt.NDArray[Any] = np.hstack([test_labels_raw, np.zeros(len(adl_test))])
+    test_emg_final: npt.NDArray[Any] = np.hstack([test_emg_feats, adl_test])
+
+    print(f"--- LOSO (Leave-One-Subject-Out) Dataset Split ---")
+    print(f"Held-out test subject IDs ({len(test_subject_ids)} subjects): {test_subject_ids}")
+    print(f"Final training set: {len(train_emg_final)} samples ({len(train_labels_raw)} gestures + {len(adl_train)} ADL)")
+    print(f"Final testing set:  {len(test_emg_final)} samples ({len(test_labels_raw)} gestures + {len(adl_test)} ADL)")
+
+    return train_emg_final, train_labels_final, test_emg_final, test_labels_final
+
+
 def extract_data(data: Dict[str, Any]) -> Tuple[Optional[npt.NDArray[Any]], Optional[npt.NDArray[Any]], Optional[int], Optional[int]]:
     """Extracts EMG, IMU, and label data from a single data sample.
 
@@ -173,7 +245,7 @@ def extract_data(data: Dict[str, Any]) -> Tuple[Optional[npt.NDArray[Any]], Opti
         data: A dictionary containing the raw sample data.
 
     Returns:
-        Tuple[Optional[npt.NDArray[Any]], Optional[npt.NDArray[Any]], Optional[int], Optional[int]]: A tuple containing:
+        Tuple containing:
             - emg: Transposed EMG data for the sample.
             - quat: Transposed quaternion data.
             - label: The mapped gesture label.
@@ -213,7 +285,7 @@ def load_epn_data(
     gesture_sets: List[str] = ['trainingSamples', 'testingSamples'],
     subjects: List[int] = list(range(1, 307)), 
     subject_types: List[str] = ['training', 'testing']
-) -> Tuple[Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]]]:
+) -> Tuple[Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[int]]]:
     """Loads and organizes the EMG dataset from JSON files or a cached pickle.
 
     Args:
@@ -223,22 +295,21 @@ def load_epn_data(
         subject_types: List of directories ('training', 'testing') to search in. Defaults to ['training', 'testing'].
 
     Returns:
-        Tuple[Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]]]: 
-            A tuple of dictionaries for (emg_data, imu_data, labels, myo_labels), 
-            each keyed by the subject_types.
+        Tuple of dictionaries for (emg_data, imu_data, labels, myo_labels, subject_ids), 
+        each keyed by the subject_types.
     """
     path = Path(path)
 
     # Check if pkl file exists (to save time)
     if os.path.exists('dataset.pkl') and len(subjects) > 300:
         with open('dataset.pkl', 'rb') as f:
-            data = pickle.load(f)
-            return data[0], data[1], data[2], data[3]
+            return tuple(pickle.load(f)) # type: ignore
 
     emg_data: Dict[str, List[Any]] = {}
     imu_data: Dict[str, List[Any]] = {}
     labels: Dict[str, List[Any]] = {}
     myo_labels: Dict[str, List[Any]] = {}
+    subject_ids: Dict[str, List[int]] = {}
     
     # Initialize dictionary:
     for t in subject_types:
@@ -246,29 +317,34 @@ def load_epn_data(
         imu_data[t] = []
         labels[t] = []
         myo_labels[t] = []
+        subject_ids[t] = []
         
     for t in subject_types:
         print("Getting " + t + " subjects...")
         for sub in subjects:
             if sub % 10 == 0:
                 print("Subject " + str(sub) + "...")
-            f = open(path / (t + 'JSON') / ('user' + str(sub)) / ('user' + str(sub) + '.json'), encoding="utf8")
-            jd = json.load(f)
-            for s in gesture_sets:
-                for sample in jd[s]: 
-                    e,i,l,ml = extract_data(jd[s][sample])
-                    if e is not None:
-                        emg_data[t].append(e)
-                        imu_data[t].append(i)
-                        labels[t].append(l)
-                        myo_labels[t].append(ml)
+            user_file = path / (t + 'JSON') / ('user' + str(sub)) / ('user' + str(sub) + '.json')
+            if not user_file.exists():
+                continue
+            with open(user_file, encoding="utf8") as f:
+                jd = json.load(f)
+                for s in gesture_sets:
+                    for sample in jd[s]: 
+                        e,i,l,ml = extract_data(jd[s][sample])
+                        if e is not None:
+                            emg_data[t].append(e)
+                            imu_data[t].append(i)
+                            labels[t].append(l)
+                            myo_labels[t].append(ml)
+                            subject_ids[t].append(sub)
 
     # Save dataset as pkl (to save time)
     if len(subjects) > 300:
         with open('dataset.pkl', 'wb') as f:
-            pickle.dump([emg_data, imu_data, labels, myo_labels], f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump([emg_data, imu_data, labels, myo_labels, subject_ids], f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return emg_data, imu_data, labels, myo_labels
+    return emg_data, imu_data, labels, myo_labels, subject_ids
 
 def load_disco_adls(path: Path | str) -> npt.NDArray[np.object_]:
     """Loads ADL (Activities of Daily Living) dataset and windows it into segments.

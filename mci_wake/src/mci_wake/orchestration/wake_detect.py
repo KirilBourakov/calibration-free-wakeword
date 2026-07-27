@@ -122,6 +122,7 @@ class WakeDetect:
             if counts['emg'][0][0] >= expected_count:
                 # Fetch and reverse
                 move = self.models[curr_model].next_step(self.odh, self.template_size)
+                print(move)
 
                 if move:
                     self.odh.reset()
