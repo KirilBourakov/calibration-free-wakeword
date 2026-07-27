@@ -17,6 +17,7 @@ from statistics import mode
 
 from mci_wake.neural.classifier import make_data_loader, DiscreteClassifierConfig, DiscreteClassifier
 from mci_wake.neural.lightning_module import DiscreteLightningModule
+from mci_wake.utils.normalize import safe_znormalize_global
 
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
 
@@ -383,7 +384,8 @@ def get_features(
     window_size: int, 
     window_inc: int, 
     feats: Optional[List[str]], 
-    feat_dic: Optional[Dict[str, Any]]
+    feat_dic: Optional[Dict[str, Any]],
+    normalize: bool = True
 ) -> npt.NDArray[Any]:
     """Extracts features from the raw EMG data using a sliding window.
 
@@ -393,13 +395,20 @@ def get_features(
         window_inc: Increment step for the sliding window.
         feats: List of feature names to extract. If None, returns raw windows.
         feat_dic: Optional dictionary for feature extraction parameters.
+        normalize: Whether to apply safe_znormalize to raw EMG signals before windowing. Defaults to True.
 
     Returns:
         npt.NDArray[Any]: Extracted features for each data sample.
     """
     from libemg.feature_extractor import FeatureExtractor
     fe = FeatureExtractor()
-    windowed_data = np.array([libemg.utils.get_windows(d, window_size, window_inc) for d in data], dtype='object')
+    
+    if normalize:
+        normalized_data = [safe_znormalize_global(d) if len(d) > 0 else d for d in data]
+    else:
+        normalized_data = data
+
+    windowed_data = np.array([libemg.utils.get_windows(d, window_size, window_inc) for d in normalized_data], dtype='object')
     
     if feats is None:
         return windowed_data 

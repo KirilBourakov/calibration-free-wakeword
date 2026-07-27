@@ -10,6 +10,7 @@ import statistics
 
 from libemg.data_handler import OnlineDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier
+from mci_wake.utils.normalize import safe_znormalize_global
 
 class ModelState:
     def __init__(
@@ -42,7 +43,7 @@ class ModelState:
 
     def _get_features(self, data, feats, feat_dic):
         fe = FeatureExtractor()
-        data = np.array([get_windows(d, self.window_size, self.increment) for d in data], dtype='object')
+        data = np.array([get_windows(safe_znormalize_global(d) if len(d) > 0 else d, self.window_size, self.increment) for d in data], dtype='object')
         if feats is None:
             return data
         if feat_dic is not None:
