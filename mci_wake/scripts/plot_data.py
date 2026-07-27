@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Dash Application for Inspecting MCI Wake Word Training Data.
+Vibe coded slop app for quick visualizations.
+
+Dash Application for Inspecting MCI Wake Word Training Data & Signal Stitching.
 
 Usage:
-    python scripts/dash_app.py [--port 8050] [--host 127.0.0.1] [--debug]
+    python scripts/plot_data.py [--port 8050] [--host 127.0.0.1] [--debug]
 """
 
 import os
@@ -11,13 +13,13 @@ import sys
 import argparse
 import pickle
 from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Union
 
 import numpy as np
 import pandas as pd
 
 import dash
-from dash import dcc, html, Input, Output, State, ctx
+from dash import dcc, html, Input, Output, State, ctx, dash_table
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -27,6 +29,8 @@ WORKSPACE_DIR = SCRIPT_DIR.parent
 SRC_DIR = WORKSPACE_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+
+from mci_wake.stitching.hanning import stitch
 
 # Gesture label mappings
 GESTURE_MAP: Dict[int, str] = {
@@ -197,11 +201,12 @@ def load_dataset() -> Dict[str, Any]:
 # Initialize dataset globally
 DATASET = load_dataset()
 
-# Initialize Dash App
+# Initialize Dash App with suppress_callback_exceptions
 app = dash.Dash(
     __name__,
-    title="MCI Wake - Dataset Inspector",
-    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}]
+    title="MCI Wake - Dataset Inspector & Stitcher",
+    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
+    suppress_callback_exceptions=True
 )
 server = app.server
 
@@ -251,8 +256,8 @@ app.layout = html.Div(
             style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "24px"},
             children=[
                 html.Div([
-                    html.H1("MCI Wake Dataset Inspector", style={"margin": "0", "fontSize": "28px", "fontWeight": "700", "color": "#f8fafc"}),
-                    html.P("Explore & visualize EMG & IMU wake-word training dataset", style={"margin": "4px 0 0 0", "color": "#94a3b8", "fontSize": "14px"})
+                    html.H1("MCI Wake Dataset Inspector & Hanning Stitcher", style={"margin": "0", "fontSize": "28px", "fontWeight": "700", "color": "#f8fafc"}),
+                    html.P("Explore EMG dataset signals & visualize constant-power Hanning signal stitching", style={"margin": "4px 0 0 0", "color": "#94a3b8", "fontSize": "14px"})
                 ]),
                 html.Div([
                     html.Span("Calibration-Free Wakeword", style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "6px 14px", "borderRadius": "20px", "fontSize": "13px", "fontWeight": "600"})
@@ -286,8 +291,23 @@ app.layout = html.Div(
             ]
         ),
 
-        # Filter Control Panel
+        # Tabs for Dashboard sections
+        dcc.Tabs(
+            id="main-tabs",
+            value="tab-inspector",
+            colors={"border": "#334155", "primary": "#38bdf8", "background": "#0f172a"},
+            style={"marginBottom": "20px"},
+            children=[
+                dcc.Tab(label="📈 Sample Signal Inspector", value="tab-inspector", style={"backgroundColor": "#1e293b", "color": "#cbd5e1", "padding": "12px"}, selected_style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "12px"}),
+                dcc.Tab(label="🧵 Hanning Stitch Inspector", value="tab-stitching", style={"backgroundColor": "#1e293b", "color": "#cbd5e1", "padding": "12px"}, selected_style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "12px"}),
+                dcc.Tab(label="📊 Dataset Statistics", value="tab-stats", style={"backgroundColor": "#1e293b", "color": "#cbd5e1", "padding": "12px"}, selected_style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "12px"}),
+                dcc.Tab(label="⚡ Frequency Spectrum", value="tab-spectrum", style={"backgroundColor": "#1e293b", "color": "#cbd5e1", "padding": "12px"}, selected_style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "12px"})
+            ]
+        ),
+
+        # Filter Control Panel (visible for signal inspector)
         html.Div(
+            id="filter-panel-container",
             style=CARD_STYLE,
             children=[
                 html.Div(
@@ -335,27 +355,23 @@ app.layout = html.Div(
             ]
         ),
 
-        # Tabs for Dashboard sections
-        dcc.Tabs(
-            id="main-tabs",
-            value="tab-inspector",
-            colors={"border": "#334155", "primary": "#38bdf8", "background": "#0f172a"},
-            style={"marginBottom": "20px"},
-            children=[
-                dcc.Tab(label="📈 Sample Signal Inspector", value="tab-inspector", style={"backgroundColor": "#1e293b", "color": "#cbd5e1", "padding": "12px"}, selected_style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "12px"}),
-                dcc.Tab(label="📊 Dataset Statistics", value="tab-stats", style={"backgroundColor": "#1e293b", "color": "#cbd5e1", "padding": "12px"}, selected_style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "12px"}),
-                dcc.Tab(label="⚡ Frequency & Feature Spectrum", value="tab-spectrum", style={"backgroundColor": "#1e293b", "color": "#cbd5e1", "padding": "12px"}, selected_style={"backgroundColor": "#3b82f6", "color": "#ffffff", "padding": "12px"})
-            ]
-        ),
-
         # Tab Content Container
         html.Div(id="tab-content")
     ]
 )
 
-
 # Store filtered indices in a dcc.Store
 app.layout.children.append(dcc.Store(id="filtered-indices-store", data=[]))
+
+
+@app.callback(
+    Output("filter-panel-container", "style"),
+    Input("main-tabs", "value")
+)
+def toggle_filter_panel(active_tab):
+    if active_tab in ["tab-inspector", "tab-spectrum"]:
+        return CARD_STYLE
+    return {"display": "none"}
 
 
 @app.callback(
@@ -418,6 +434,9 @@ def handle_sample_navigation(btn_prev, btn_next, btn_rand, filtered_indices, cur
     Input("sample-index-input", "value")
 )
 def render_tab_content(active_tab, filtered_indices, filtered_pos):
+    if active_tab == "tab-stitching":
+        return build_stitching_tab()
+
     if not filtered_indices:
         return html.Div(
             style=CARD_STYLE,
@@ -569,8 +588,302 @@ def build_inspector_tab(sample: Dict[str, Any], pos: int, total_filtered: int) -
     ])
 
 
+def generate_arbitrary_stitch_data(preset_type: str = "synthetic", num_segments: int = 4) -> Tuple[List[np.ndarray], List[str]]:
+    """
+    Generates arbitrary EMG segments (synthetic or selected from dataset) for testing stitch calls.
+    """
+    segments: List[np.ndarray] = []
+    labels: List[str] = []
+
+    if preset_type == "synthetic":
+        # Generate synthetic sEMG bursts with different frequencies and amplitudes
+        t_base = np.linspace(0, 1.0, 180)
+        gestures = ["noGesture", "pinch", "fist", "waveIn", "open", "waveOut"]
+        for i in range(num_segments):
+            g_name = gestures[i % len(gestures)]
+            amp = 0.1 if g_name == "noGesture" else (0.4 + 0.3 * (i % 3))
+            freq = 15.0 + 8.0 * (i + 1)
+            ch_data = []
+            for ch in range(8):
+                noise = np.random.normal(0, 0.04, size=len(t_base))
+                burst = amp * np.sin(2 * np.pi * (freq + ch * 1.5) * t_base) * np.exp(-((t_base - 0.5) ** 2) / 0.04)
+                ch_data.append(burst + noise)
+            seg = np.column_stack(ch_data).astype(np.float32)
+            segments.append(seg)
+            labels.append(g_name)
+    else:
+        # Pick random samples from dataset
+        if DATASET["samples"]:
+            sample_pool = DATASET["samples"]
+            indices = np.random.choice(len(sample_pool), size=min(num_segments, len(sample_pool)), replace=False)
+            for idx in indices:
+                s = sample_pool[idx]
+                segments.append(s["emg"])
+                labels.append(s["gesture"])
+        else:
+            return generate_arbitrary_stitch_data("synthetic", num_segments)
+
+    return segments, labels
+
+
+def build_stitching_tab() -> html.Div:
+    """
+    Builds the interactive Hanning Stitch Inspector layout.
+    """
+    return html.Div([
+        # Control Panel Card
+        html.Div(
+            style=CARD_STYLE,
+            children=[
+                html.H3("🧵 Constant-Power Hanning stitch() Parameters", style={"margin": "0 0 16px 0", "fontSize": "18px", "color": "#38bdf8"}),
+                html.Div(
+                    style={"display": "grid", "gridTemplateColumns": "repeat(auto-fit, minmax(200px, 1fr))", "gap": "16px", "alignItems": "end"},
+                    children=[
+                        # Data Source Preset
+                        html.Div([
+                            html.Label("Data Preset", style={"fontSize": "13px", "fontWeight": "600", "color": "#cbd5e1", "marginBottom": "6px", "display": "block"}),
+                            dcc.Dropdown(
+                                id="stitch-preset-dropdown",
+                                options=[
+                                    {"label": "✨ Synthetic EMG Signals", "value": "synthetic"},
+                                    {"label": "📊 Random Dataset Samples", "value": "dataset"}
+                                ],
+                                value="synthetic",
+                                clearable=False,
+                                style={"color": "#000000"}
+                            )
+                        ]),
+
+                        # Num Segments
+                        html.Div([
+                            html.Label("Number of Segments", style={"fontSize": "13px", "fontWeight": "600", "color": "#cbd5e1", "marginBottom": "6px", "display": "block"}),
+                            dcc.Input(id="stitch-num-segments", type="number", value=4, min=2, max=10, step=1, style={"width": "100%", "padding": "6px", "borderRadius": "6px", "border": "1px solid #475569"})
+                        ]),
+
+                        # Overlap Samples (hanning.py argument)
+                        html.Div([
+                            html.Label("overlap_samples", style={"fontSize": "13px", "fontWeight": "600", "color": "#cbd5e1", "marginBottom": "6px", "display": "block"}),
+                            dcc.Input(id="stitch-overlap-input", type="number", value=15, min=1, max=100, step=1, style={"width": "100%", "padding": "6px", "borderRadius": "6px", "border": "1px solid #475569"})
+                        ]),
+
+                        # Re-Stitch Trigger Button
+                        html.Div([
+                            html.Button("⚡ Run hanning.stitch() Call", id="btn-restitch", n_clicks=0, style={"backgroundColor": "#3b82f6", "color": "#ffffff", "border": "none", "borderRadius": "6px", "padding": "8px 16px", "cursor": "pointer", "fontWeight": "600", "width": "100%"})
+                        ])
+                    ]
+                )
+            ]
+        ),
+
+        # Container for Stitched Output Visualizations
+        html.Div(id="stitched-results-container")
+    ])
+
+
+@app.callback(
+    Output("stitched-results-container", "children"),
+    Input("btn-restitch", "n_clicks"),
+    Input("stitch-preset-dropdown", "value"),
+    Input("stitch-num-segments", "value"),
+    Input("stitch-overlap-input", "value")
+)
+def update_stitched_visualization(n_clicks, preset, num_seg, overlap_samples):
+    num_seg = max(2, min(10, num_seg or 4))
+    overlap_samples = max(1, int(overlap_samples or 15))
+
+    # 1. Generate arbitrary segments
+    segments, segment_labels = generate_arbitrary_stitch_data(preset, num_seg)
+
+    # Ensure each segment length >= overlap_samples for valid hanning stitching
+    validated_segments = []
+    for s in segments:
+        if len(s) < overlap_samples + 5:
+            # Pad short segments if needed
+            pad_len = (overlap_samples + 5) - len(s)
+            s = np.pad(s, ((0, pad_len), (0, 0)), mode="edge")
+        validated_segments.append(s.astype(np.float32))
+
+    # 2. Call the stitch function from mci_wake.stitching.hanning
+    try:
+        stitched_emg = stitch(data=validated_segments, overlap_samples=overlap_samples)
+    except Exception as e:
+        return html.Div(
+            style=CARD_STYLE,
+            children=html.Div(f"Error executing stitch call: {e}", style={"color": "#f87171", "fontWeight": "bold"})
+        )
+
+    t_total = stitched_emg.shape[0]
+    timesteps = np.arange(t_total)
+
+    # Compute timeline boundaries for each segment
+    seams = []
+    curr_t = 0
+    segment_metadata = []
+
+    for i, (seg, lbl) in enumerate(zip(validated_segments, segment_labels)):
+        seg_len = len(seg)
+        if i == 0:
+            start_t = 0
+            end_t = seg_len
+            curr_t = end_t
+        else:
+            start_t = curr_t - overlap_samples
+            end_t = start_t + seg_len
+            seams.append(start_t)
+            curr_t = end_t
+
+        segment_metadata.append({
+            "Segment Index": i,
+            "Gesture Label": lbl,
+            "Original Length": seg_len,
+            "Timeline Start": start_t,
+            "Timeline End": end_t
+        })
+
+    # Build Stitched Signal Figure
+    fig_stitched = go.Figure()
+
+    # Overlay 8 EMG channels
+    for ch in range(min(8, stitched_emg.shape[1])):
+        fig_stitched.add_trace(
+            go.Scatter(
+                x=timesteps,
+                y=stitched_emg[:, ch],
+                mode="lines",
+                name=f"Ch {ch+1}",
+                line=dict(color=CHANNEL_COLORS[ch % len(CHANNEL_COLORS)], width=1.3)
+            )
+        )
+
+    # Add vertical seam boundary markers for each stitched joint
+    for idx, meta in enumerate(segment_metadata):
+        g_name = str(meta["Gesture Label"])
+        bg_color = GESTURE_COLORS.get(g_name, "#3b82f6")
+
+        # Shaded region per segment
+        fig_stitched.add_vrect(
+            x0=meta["Timeline Start"],
+            x1=meta["Timeline End"],
+            fillcolor=bg_color,
+            opacity=0.12,
+            layer="below",
+            line_width=0
+        )
+
+        if idx > 0:
+            seam_t = meta["Timeline Start"]
+            fig_stitched.add_vline(
+                x=seam_t,
+                line_width=1.8,
+                line_dash="dash",
+                line_color="#f43f5e"
+            )
+
+        # Label annotation
+        fig_stitched.add_annotation(
+            x=(meta["Timeline Start"] + meta["Timeline End"]) / 2,
+            y=np.max(stitched_emg) * 1.05 if np.max(stitched_emg) > 0 else 1.0,
+            text=f"<b>Seg #{meta['Segment Index']}: {g_name}</b>",
+            showarrow=False,
+            font=dict(color=bg_color, size=12),
+            bgcolor="#0f172a",
+            bordercolor=bg_color,
+            borderwidth=1,
+            borderpad=4
+        )
+
+    fig_stitched.update_layout(
+        title=f"Continuous Hanning Stitched Signal (Total Output Shape: {stitched_emg.shape})",
+        height=450,
+        paper_bgcolor="#1e293b",
+        plot_bgcolor="#0f172a",
+        font=dict(color="#cbd5e1"),
+        margin=dict(l=40, r=40, t=60, b=40),
+        legend=dict(orientation="h", y=1.12)
+    )
+    fig_stitched.update_xaxes(showgrid=True, gridcolor="#334155", title_text="Continuous Timesteps (samples)")
+    fig_stitched.update_yaxes(showgrid=True, gridcolor="#334155", title_text="sEMG Amplitude")
+
+    df_events = pd.DataFrame(segment_metadata)
+
+    code_snippet = f"""# Code execution using mci_wake.stitching.hanning:
+from mci_wake.stitching.hanning import stitch
+
+# Input: list of {len(validated_segments)} 2D NumPy arrays of shape (T, 8)
+segments = [seg_0, seg_1, ...]
+
+stitched_emg = stitch(
+    data=segments,
+    overlap_samples={overlap_samples} # Constant-power Hanning cross-fade (overlap = {overlap_samples})
+)
+
+# Resulting continuous array shape: {stitched_emg.shape}
+"""
+
+    return html.Div([
+        # Waveform Card
+        html.Div(
+            style=CARD_STYLE,
+            children=[
+                dcc.Graph(figure=fig_stitched, config={"responsive": True})
+            ]
+        ),
+
+        # Python Code Snippet & Timeline Metadata Table Card
+        html.Div(
+            style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "20px"},
+            children=[
+                # Code Block
+                html.Div(
+                    style=CARD_STYLE,
+                    children=[
+                        html.H4("🐍 hanning.stitch() Call Execution", style={"margin": "0 0 12px 0", "color": "#34d399", "fontSize": "16px"}),
+                        html.Pre(
+                            code_snippet,
+                            style={
+                                "backgroundColor": "#0f172a",
+                                "color": "#38bdf8",
+                                "padding": "14px",
+                                "borderRadius": "8px",
+                                "fontSize": "13px",
+                                "overflowX": "auto",
+                                "border": "1px solid #334155"
+                            }
+                        )
+                    ]
+                ),
+
+                # Metadata Table
+                html.Div(
+                    style=CARD_STYLE,
+                    children=[
+                        html.H4("📋 Stitched Timeline & Seam Metadata", style={"margin": "0 0 12px 0", "color": "#fbbf24", "fontSize": "16px"}),
+                        dash_table.DataTable(
+                            data=df_events.to_dict("records"),
+                            columns=[{"name": i, "id": i} for i in df_events.columns],
+                            style_header={
+                                "backgroundColor": "#0f172a",
+                                "color": "#cbd5e1",
+                                "fontWeight": "bold",
+                                "border": "1px solid #334155"
+                            },
+                            style_cell={
+                                "backgroundColor": "#1e293b",
+                                "color": "#f8fafc",
+                                "fontSize": "13px",
+                                "textAlign": "center",
+                                "border": "1px solid #334155",
+                                "padding": "8px"
+                            }
+                        )
+                    ]
+                )
+            ]
+        )
+    ])
+
+
 def build_stats_tab() -> html.Div:
-    # Gesture Distribution Bar Chart
     df_samples = pd.DataFrame([
         {"gesture": s["gesture"], "split": s["split"], "subject_id": s["subject_id"], "length": s["length"]}
         for s in DATASET["samples"]
@@ -598,7 +911,6 @@ def build_stats_tab() -> html.Div:
     fig_gest.update_xaxes(showgrid=True, gridcolor="#334155")
     fig_gest.update_yaxes(showgrid=True, gridcolor="#334155")
 
-    # Sample Length Histogram
     fig_len = go.Figure()
     fig_len.add_trace(
         go.Histogram(
@@ -619,7 +931,6 @@ def build_stats_tab() -> html.Div:
     fig_len.update_xaxes(showgrid=True, gridcolor="#334155", title_text="Sample Length (timesteps)")
     fig_len.update_yaxes(showgrid=True, gridcolor="#334155", title_text="Count")
 
-    # Subject Samples Distribution
     sub_df = df_samples[df_samples["subject_id"] != -1]
     sub_counts = sub_df["subject_id"].value_counts().sort_index()
 
@@ -657,7 +968,6 @@ def build_stats_tab() -> html.Div:
 def build_spectrum_tab(sample: Dict[str, Any]) -> html.Div:
     emg = sample["emg"]
     
-    # Feature Metrics Bar Chart (RMS & Mean Absolute Value per channel)
     rms_per_ch = []
     mav_per_ch = []
     ch_names = [f"Ch {i+1}" for i in range(emg.shape[1] if emg.ndim > 1 else 1)]
@@ -682,12 +992,11 @@ def build_spectrum_tab(sample: Dict[str, Any]) -> html.Div:
     fig_feats.update_xaxes(showgrid=True, gridcolor="#334155")
     fig_feats.update_yaxes(showgrid=True, gridcolor="#334155")
 
-    # Power Spectral Density (FFT)
     fig_fft = go.Figure()
     for ch in range(min(8, emg.shape[1] if emg.ndim > 1 else 1)):
         c_data = emg[:, ch] if emg.ndim > 1 else emg
         fft_vals = np.abs(np.fft.rfft(c_data))
-        freqs = np.fft.rfftfreq(len(c_data), d=1.0/200.0)  # Assume ~200Hz sampling rate
+        freqs = np.fft.rfftfreq(len(c_data), d=1.0/200.0)
         fig_fft.add_trace(
             go.Scatter(
                 x=freqs,
@@ -716,14 +1025,14 @@ def build_spectrum_tab(sample: Dict[str, Any]) -> html.Div:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MCI Wake Dataset Inspector Dash App")
+    parser = argparse.ArgumentParser(description="MCI Wake Dataset Inspector & Stitcher Dash App")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host IP to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8050, help="Port to run Dash server (default: 8050)")
     parser.add_argument("--debug", action="store_true", help="Enable Dash debug mode")
     args = parser.parse_args()
 
     print(f"\n=======================================================")
-    print(f"🚀 Starting Dash Dataset Inspector at http://{args.host}:{args.port}")
+    print(f"🚀 Starting Dash Dataset Inspector & Stitcher at http://{args.host}:{args.port}")
     print(f"=======================================================\n")
 
     app.run(host=args.host, port=args.port, debug=args.debug)
