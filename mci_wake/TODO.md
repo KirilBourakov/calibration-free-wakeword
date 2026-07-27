@@ -1,5 +1,4 @@
-1. Explore mismatch (is conv currently across dimensions instead of the time axis)?
-2. Chain of motions (2 pinch as a wake word, for example)
-   1. Two different motions, each with a binary model, which each must agree. 
-3. Intensity on binary classification; not only do the motion, but have to spike over a certain amount
-   1cccc. How do this without calibration?
+1. Stitching + recording for offline stress testing
+2. Circular 2D CNN (map proximity of electoids to each other) (Spatial Graph CNN?)
+3. Inception with  Residual Skip Connection instead of simple CNN
+4. Different features?
