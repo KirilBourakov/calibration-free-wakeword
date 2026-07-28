@@ -35,7 +35,9 @@ class ModelState:
         # predict
         pred, prob_, output = self.model.predict(feats)
         self.buffer.append(pred)
-        mode_pred = statistics.mode(self.buffer[-self.buffer_size:])
+        if len(self.buffer) > self.buffer_size:
+            self.buffer = self.buffer[-self.buffer_size:]
+        mode_pred = statistics.mode(self.buffer)
         return mode_pred != 0
 
     def reset(self):
@@ -139,7 +141,7 @@ class WakeDetect:
                     else:
                         print(f"{str(time.time())} State transition from {curr_model} to {curr_model + 1}")
                 else:
-                    expected_count += 10
+                    expected_count = min(expected_count + 10, self.template_size)
                     if last_step_time and time.time() - last_step_time > self.sequence_timeout:
                         self.odh.reset()
                         for model in self.models:

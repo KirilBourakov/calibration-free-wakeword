@@ -19,12 +19,12 @@ if __name__ == "__main__":
 
     _, sm = myo_streamer()
     lightning_model = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_1\checkpoints\best-model-epoch=08-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_2\checkpoints\best-model-epoch=05-val_acc=0.98.ckpt"
     )
     model1 = lightning_model.internals
 
     lightning_model = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=08-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_3\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
     )
 
     model2 = lightning_model.internals
