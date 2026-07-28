@@ -24,19 +24,19 @@ class StitchingDataHandler:
         self.adl_data = adl_data
         self.sampling_rate = sampling_rate
 
-        self.time_last_call = time.time()
+        self.start_time: float | None = None
         self.buffer = np.zeros((0, 8))
         self.end_idx = 0
         self.reset_idx = 0
 
     def update(self) -> int:
-        elapsed = time.time() - self.time_last_call
-        offset = int(elapsed * self.sampling_rate)
-        self.end_idx += offset
+        if self.start_time is None:
+            self.start_time = time.time()
+        elapsed = time.time() - self.start_time
+        self.end_idx = int(elapsed * self.sampling_rate)
         if self.end_idx >= len(self.buffer):
             pass # TODO: stitch
-        self.time_last_call = time.time()
-        return offset
+        return self.end_idx
 
     def get_data(
         self, N: int = 0, filter: bool = True
@@ -70,5 +70,5 @@ class StitchingDataHandler:
         """
         Reset the sample counter for the specified modality (or all modalities).
         """
-        self.time_last_call = time.time()
+        self.update()
         self.reset_idx = self.end_idx
