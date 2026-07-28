@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import random
 from typing import Any
 import time
@@ -7,6 +8,12 @@ import numpy.typing as npt
 from mci_wake.stitching.hanning import stitch
 from mci_wake.data.train_utils import gesture_mapping
 
+
+@dataclass
+class TargetRegion:
+    start: int
+    end: int
+    status: str = "pending"  # "pending", "detected", "missed"
 
 class StitchingDataHandler:
     """
@@ -43,10 +50,8 @@ class StitchingDataHandler:
         self.end_idx = 0
         self.reset_idx = 0
 
-        self.target_regions: list[tuple[int, int]] = []
+        self.target_regions: list[TargetRegion] = []
         self.triggers: list[dict[str, Any]] = []
-        self.true_positives: int = 0
-        self.false_positives: int = 0
 
         self._stitch_more_data()
 
@@ -61,6 +66,8 @@ class StitchingDataHandler:
             self._stitch_more_data()
             if len(self.buffer) <= prev_len:
                 break
+
+        self._check_false_negatives()
         return self.end_idx
 
     def get_data(
@@ -98,7 +105,7 @@ class StitchingDataHandler:
         self.update()
         self.reset_idx = self.end_idx
 
-    def on_wake_detected(self, tolerance=.5) -> None:
+    def on_wake_detected(self, tolerance=0.5) -> None:
         """
         Called by an orchestrator (e.g. WakeDetect) when a wake detection occurs.
         Tracks true vs. false positives internally.
@@ -109,26 +116,35 @@ class StitchingDataHandler:
         current_idx = self.end_idx
         tolerance_samples = int(tolerance * self.sampling_rate)
 
-        is_tp = any(
-            start <= current_idx <= end + tolerance_samples
-            for start, end in self.target_regions
-        )
-
-        if is_tp:
-            self.true_positives += 1
-        else:
-            self.false_positives += 1
+        is_fp = True
+        for region in self.target_regions:
+            if region.status == "pending" and region.start <= current_idx <= region.end + tolerance_samples:
+                is_fp = False
+                region.status = "detected"
 
         self.triggers.append({
             "sample_idx": current_idx,
             "timestamp": time.time(),
-            "is_false_positive": not is_tp,
+            "is_false_positive": is_fp,
         })
 
-    def get_trigger_stats(self) -> dict[str, Any]:
+    def _check_false_negatives(self, tolerance=0.5) -> None:
+        current_idx = self.end_idx
+        tolerance_samples = int(tolerance * self.sampling_rate)
+
+        for region in self.target_regions:
+            if region.status == "pending" and current_idx > region.end + tolerance_samples:
+                region.status = "missed"
+
+    def get_trigger_stats(self, tolerance=0.5) -> dict[str, Any]:
+        self._check_false_negatives(tolerance=tolerance)
+        tp = sum(1 for r in self.target_regions if r.status == "detected")
+        fp = sum(1 for t in self.triggers if t["is_false_positive"])
+        fn = sum(1 for r in self.target_regions if r.status == "missed")
         return {
-            "true_positives": self.true_positives,
-            "false_positives": self.false_positives,
+            "true_positives": tp,
+            "false_positives": fp,
+            "false_negatives": fn,
             "total_triggers": len(self.triggers),
             "target_regions_count": len(self.target_regions),
             "triggers": self.triggers,
@@ -149,7 +165,7 @@ class StitchingDataHandler:
 
         if is_test_case:
             end_len = len(self.buffer)
-            self.target_regions.append((start_len, end_len))
+            self.target_regions.append(TargetRegion(start=start_len, end=end_len))
 
     def _get_next_segments(self) -> tuple[list[npt.NDArray[np.floating]], bool]:
         p_adl, p_emg, _ = self.probabilities
