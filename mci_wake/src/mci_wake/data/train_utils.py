@@ -77,7 +77,7 @@ def train_model(
     return cast(DiscreteLightningModule, trainer.lightning_module).internals
 
 
-def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[np.object_], npt.NDArray[np.int_]]:
+def load_raw_data(presplit_adl=True) -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[np.object_], npt.NDArray[np.int_]]:
     """Loads ADL and gesture EMG data from the dataset alongside subject IDs.
 
     Returns:
@@ -87,7 +87,10 @@ def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDAr
             - subject_ids_all: Combined training and testing subject IDs.
             - adl_data: Loaded ADL EMG data.
     """
-    adl_data, adl_subjects = split_disco_adls(*load_disco_adls(ADL_DATA))
+    adl_data, adl_subjects = load_disco_adls(ADL_DATA)
+    if presplit_adl:
+        adl_data, adl_subjects = split_disco_adls(adl_data, adl_subjects)
+
     emg, imu, labels, myo_labels, epn_subjects = load_epn_data(EPN_DATA)
 
     training_emg = np.array(emg['training'], dtype='object')
@@ -107,6 +110,85 @@ def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDAr
     print(f"Loaded {len(adl_data)} ADL noise segments.")
 
     return emg_data_all, labels_all, subject_ids_all, adl_data, adl_subjects
+
+
+def _parse_subject_id(val: Union[int, str, Any]) -> Optional[int]:
+    if isinstance(val, (int, np.integer)):
+        return int(val)
+    if isinstance(val, str):
+        cleaned = val.strip().lower()
+        if cleaned.startswith("user"):
+            cleaned = cleaned[4:].strip()
+        elif cleaned.startswith("s"):
+            cleaned = cleaned[1:].strip()
+        try:
+            return int(cleaned)
+        except ValueError:
+            return None
+    return None
+
+
+def filter_training(
+    emg_data_all: npt.NDArray[np.object_],
+    labels_all: npt.NDArray[Any],
+    subject_ids_all: npt.NDArray[Any],
+    adl_data: npt.NDArray[np.object_],
+    adl_subjects: npt.NDArray[np.int_],
+    *train_datas: TrainData,
+) -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[np.object_], npt.NDArray[np.int_]]:
+    """Filters out raw dataset samples corresponding to subjects already present in any of the provided TrainData instances.
+
+    Args:
+        emg_data_all: Combined training and testing gesture EMG data.
+        labels_all: Combined training and testing gesture labels.
+        subject_ids_all: Subject IDs for each gesture sample.
+        adl_data: Loaded ADL EMG data.
+        adl_subjects: Subject IDs for each ADL sample.
+        *train_datas: Variable number of TrainData objects containing used subject IDs in `.emg` and `.disco`.
+
+    Returns:
+        Tuple containing filtered (emg_data_all, labels_all, subject_ids_all, adl_data, adl_subjects).
+    """
+    used_emg_subjects: set[int] = set()
+    used_disco_subjects: set[int] = set()
+
+    for td in train_datas:
+        if td is None:
+            continue
+        for s in getattr(td, "emg", []):
+            parsed = _parse_subject_id(s)
+            if parsed is not None:
+                used_emg_subjects.add(parsed)
+        for s in getattr(td, "disco", []):
+            parsed = _parse_subject_id(s)
+            if parsed is not None:
+                used_disco_subjects.add(parsed)
+
+    if used_emg_subjects:
+        emg_mask = ~np.isin(subject_ids_all, list(used_emg_subjects))
+        filtered_emg_data_all = emg_data_all[emg_mask]
+        filtered_labels_all = labels_all[emg_mask]
+        filtered_subject_ids_all = subject_ids_all[emg_mask]
+    else:
+        filtered_emg_data_all = emg_data_all
+        filtered_labels_all = labels_all
+        filtered_subject_ids_all = subject_ids_all
+
+    if used_disco_subjects:
+        adl_mask = ~np.isin(adl_subjects, list(used_disco_subjects))
+        filtered_adl_data = adl_data[adl_mask]
+        filtered_adl_subjects = adl_subjects[adl_mask]
+    else:
+        filtered_adl_data = adl_data
+        filtered_adl_subjects = adl_subjects
+
+    print(f"Filtered raw training data using {len(train_datas)} TrainData instances:")
+    print(f"  Removed {len(used_emg_subjects)} EPN subject IDs: {sorted(used_emg_subjects)}")
+    print(f"  Removed {len(used_disco_subjects)} ADL subject IDs: {sorted(used_disco_subjects)}")
+    print(f"  EPN samples remaining: {len(filtered_emg_data_all)} / {len(emg_data_all)}")
+    print(f"  ADL samples remaining: {len(filtered_adl_data)} / {len(adl_data)}")
+
+    return filtered_emg_data_all, filtered_labels_all, filtered_subject_ids_all, filtered_adl_data, filtered_adl_subjects
 
 
 def preprocess_nm_data(emg_data_all: npt.NDArray[np.object_], labels_all: npt.NDArray[Any]) -> npt.NDArray[np.object_]:
