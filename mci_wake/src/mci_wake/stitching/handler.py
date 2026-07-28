@@ -128,14 +128,6 @@ class StitchingDataHandler:
             "is_false_positive": is_fp,
         })
 
-    def _check_false_negatives(self, tolerance=0.5) -> None:
-        current_idx = self.end_idx
-        tolerance_samples = int(tolerance * self.sampling_rate)
-
-        for region in self.target_regions:
-            if region.status == "pending" and current_idx > region.end + tolerance_samples:
-                region.status = "missed"
-
     def get_trigger_stats(self, tolerance=0.5) -> dict[str, Any]:
         self._check_false_negatives(tolerance=tolerance)
         tp = sum(1 for r in self.target_regions if r.status == "detected")
@@ -149,6 +141,14 @@ class StitchingDataHandler:
             "target_regions_count": len(self.target_regions),
             "triggers": self.triggers,
         }
+
+    def _check_false_negatives(self, tolerance=0.5) -> None:
+        current_idx = self.end_idx
+        tolerance_samples = int(tolerance * self.sampling_rate)
+
+        for region in self.target_regions:
+            if region.status == "pending" and current_idx > region.end + tolerance_samples:
+                region.status = "missed"
 
     def _stitch_more_data(self) -> None:
         start_len = len(self.buffer)

@@ -20,12 +20,14 @@ class ModelState:
         window_size: int,
         increment: int,
         buffer_size: int,
+        normalize: bool = True,
     ):
         assert model.config.n_classes == 2
         self.model = model
         self.window_size = window_size
         self.increment = increment
         self.buffer_size = buffer_size
+        self.normalize = normalize
         self.buffer = []
 
     def next_step(self, odh: OnlineDataHandler | StitchingDataHandler, size: int):
@@ -46,7 +48,14 @@ class ModelState:
 
     def _get_features(self, data, feats, feat_dic):
         fe = FeatureExtractor()
-        data = np.array([get_windows(safe_znormalize_global(d) if len(d) > 0 else d, self.window_size, self.increment) for d in data], dtype='object')
+        data = np.array([
+            get_windows(
+                safe_znormalize_global(d) if (len(d) > 0 and self.normalize) else d,
+                self.window_size,
+                self.increment
+            )
+            for d in data
+        ], dtype='object')
         if feats is None:
             return data
         if feat_dic is not None:
@@ -96,7 +105,8 @@ class WakeDetect:
         min_template_size=150,
         sequence_timeout = 2.0,
         key_mapping: dict[str, str] | None = None,
-        debug=True
+        debug=True,
+        normalize=True,
     ):
         if key_mapping is None:
             key_mapping = {'Close': 'c', 'Flexion': 'f', 'Extension': 'e', 'Open': 'o', 'Pinch': 'p'}
@@ -105,7 +115,7 @@ class WakeDetect:
         self.window_size = window_size
         self.increment = increment
         self.buffer_size = buffer
-        self.models = [ModelState(m, window_size, increment, buffer) for m in models]
+        self.models = [ModelState(m, window_size, increment, buffer, normalize=normalize) for m in models]
         self.template_size = template_size
         self.min_template_size = min_template_size
         self.sequence_timeout = sequence_timeout
