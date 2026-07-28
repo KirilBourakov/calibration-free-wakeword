@@ -115,22 +115,37 @@ class StitchingDataHandler:
             segments.append(np.asarray(self.adl_data[idx], dtype=np.float64))
         elif r < p_adl + p_emg:
             # some random movement
-            idx = random.randint(0, len(self.emg_data) - 1)
-            segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+            if len(self.gesture_sequence) == 1:
+                # If we only have one gesture, don't insert that gesture
+                target_g = self.gesture_sequence[0]
+                matching = [i for i, l in enumerate(self.emg_labels) if l != target_g]
+                if matching:
+                    idx = random.choice(matching)
+                    segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+            else:
+                # If we have several gestures, and insert the first gesture to our sequence, add some adl right after
+                idx = random.randint(0, len(self.emg_data) - 1)
+                segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+                if len(self.gesture_sequence) > 1:
+                    idx_adl = random.randint(0, len(self.adl_data) - 1)
+                    segments.append(np.asarray(self.adl_data[idx_adl], dtype=np.float64))
+
         else:
             # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-1.25s no-gesture gaps
+            # Inserts [empty] [gesture 1] [empty] [gesture 2] ... [gesture n]
             leading_no_g = self._get_no_gesture_segment(max_duration_sec=0.25)
             if leading_no_g is not None and len(leading_no_g) > 0:
                 segments.append(leading_no_g)
 
-            for g_id in self.gesture_sequence:
+            for i, g_id in enumerate(self.gesture_sequence):
                 matching = [i for i, l in enumerate(self.emg_labels) if l == g_id]
                 idx = random.choice(matching)
                 segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
 
-                no_g_seg = self._get_no_gesture_segment(max_duration_sec=1.25)
-                if no_g_seg is not None and len(no_g_seg) > 0:
-                    segments.append(no_g_seg)
+                if i < len(self.gesture_sequence) - 1:
+                    no_g_seg = self._get_no_gesture_segment(max_duration_sec=1.25)
+                    if no_g_seg is not None and len(no_g_seg) > 0:
+                        segments.append(no_g_seg)
 
         return segments
 
