@@ -153,13 +153,11 @@ def filter_training(
     used_disco_subjects: set[int] = set()
 
     for td in train_datas:
-        if td is None:
-            continue
-        for s in getattr(td, "emg", []):
+        for s in td.emg:
             parsed = _parse_subject_id(s)
             if parsed is not None:
                 used_emg_subjects.add(parsed)
-        for s in getattr(td, "disco", []):
+        for s in td.disco:
             parsed = _parse_subject_id(s)
             if parsed is not None:
                 used_disco_subjects.add(parsed)
@@ -183,8 +181,6 @@ def filter_training(
         filtered_adl_subjects = adl_subjects
 
     print(f"Filtered raw training data using {len(train_datas)} TrainData instances:")
-    print(f"  Removed {len(used_emg_subjects)} EPN subject IDs: {sorted(used_emg_subjects)}")
-    print(f"  Removed {len(used_disco_subjects)} ADL subject IDs: {sorted(used_disco_subjects)}")
     print(f"  EPN samples remaining: {len(filtered_emg_data_all)} / {len(emg_data_all)}")
     print(f"  ADL samples remaining: {len(filtered_adl_data)} / {len(adl_data)}")
 

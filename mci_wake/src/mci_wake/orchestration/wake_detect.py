@@ -10,6 +10,7 @@ import statistics
 
 from libemg.data_handler import OnlineDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier
+from mci_wake.stitching.handler import StitchingDataHandler
 from mci_wake.utils.normalize import safe_znormalize_global
 
 class ModelState:
@@ -27,7 +28,7 @@ class ModelState:
         self.buffer_size = buffer_size
         self.buffer = []
 
-    def next_step(self, odh: OnlineDataHandler, size: int):
+    def next_step(self, odh: OnlineDataHandler | StitchingDataHandler, size: int):
         data, counts = odh.get_data(size)
         emg = data['emg'][::-1]
         feats = self._get_features([emg], None, None)[0]
@@ -86,7 +87,7 @@ class WakeDetect:
 
     def __init__(
         self,
-        odh: OnlineDataHandler,
+        odh: OnlineDataHandler | StitchingDataHandler,
         window_size: int,
         increment: int,
         models: list[DiscreteClassifier],
