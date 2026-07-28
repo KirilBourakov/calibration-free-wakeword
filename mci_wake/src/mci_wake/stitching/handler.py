@@ -5,6 +5,7 @@ import numpy as np
 import numpy.typing as npt
 
 from mci_wake.stitching.hanning import stitch
+from mci_wake.data.train_utils import gesture_mapping
 
 
 class StitchingDataHandler:
@@ -15,9 +16,10 @@ class StitchingDataHandler:
 
     def __init__(
         self,
-        emg_data: npt.NDArray[np.object_] | list[npt.NDArray[np.floating]] | None = None,
-        emg_labels: npt.NDArray[Any] | list[Any] | None = None,
-        adl_data: npt.NDArray[np.object_] | list[npt.NDArray[np.floating]] | None = None,
+        emg_data: npt.NDArray[np.object_] | list[npt.NDArray[np.floating]],
+        emg_labels: npt.NDArray[Any] | list[Any],
+        adl_data: npt.NDArray[np.object_] | list[npt.NDArray[np.floating]],
+        gestures: list[str] | list[int],
         sampling_rate: float = 200.0,
         probabilities: tuple[float, float, float] = (0.5, 0.5, 0.0),
     ):
@@ -29,6 +31,12 @@ class StitchingDataHandler:
         self.adl_data = adl_data
         self.sampling_rate = sampling_rate
         self.probabilities = probabilities
+        self.gestures = gestures
+
+        self.gesture_sequence = [
+            gesture_mapping[g] if isinstance(g, str) and g in gesture_mapping else int(g)
+            for g in gestures
+        ]
 
         self.start_time: float | None = None
         self.buffer: npt.NDArray[np.floating] = np.zeros((0, 8), dtype=np.float64)
@@ -36,36 +44,6 @@ class StitchingDataHandler:
         self.reset_idx = 0
 
         self._stitch_more_data()
-
-    def _get_next_segments(self, count: int = 4) -> list[npt.NDArray[np.floating]]:
-        p_adl, p_emg, _ = self.probabilities
-
-        segments: list[npt.NDArray[np.floating]] = []
-        for _ in range(count):
-            r = random.random()
-            if r < p_adl:
-                idx = random.randint(0, len(self.adl_data) - 1)
-                segments.append(np.asarray(self.adl_data[idx], dtype=np.float64))
-            elif r < p_adl + p_emg:
-                idx = random.randint(0, len(self.emg_data) - 1)
-                segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
-            else:
-                # TODO: Implement 3rd segment selection / generation option
-                pass
-
-        return segments
-
-    def _stitch_more_data(self) -> None:
-        new_segments = self._get_next_segments()
-        if not new_segments:
-            return
-        if len(self.buffer) == 0:
-            if len(new_segments) == 1:
-                self.buffer = new_segments[0].copy()
-            else:
-                self.buffer = stitch(new_segments)
-        else:
-            self.buffer = stitch([self.buffer] + new_segments)
 
     def update(self) -> int:
         if self.start_time is None:
@@ -114,3 +92,62 @@ class StitchingDataHandler:
         """
         self.update()
         self.reset_idx = self.end_idx
+
+    def _stitch_more_data(self) -> None:
+        new_segments = self._get_next_segments()
+        if not new_segments:
+            return
+        if len(self.buffer) == 0:
+            if len(new_segments) == 1:
+                self.buffer = new_segments[0].copy()
+            else:
+                self.buffer = stitch(new_segments)
+        else:
+            self.buffer = stitch([self.buffer] + new_segments)
+
+    def _get_next_segments(self) -> list[npt.NDArray[np.floating]]:
+        p_adl, p_emg, _ = self.probabilities
+        segments: list[npt.NDArray[np.floating]] = []
+        r = random.random()
+        if r < p_adl:
+            # empty adl data
+            idx = random.randint(0, len(self.adl_data) - 1)
+            segments.append(np.asarray(self.adl_data[idx], dtype=np.float64))
+        elif r < p_adl + p_emg:
+            # some random movement
+            idx = random.randint(0, len(self.emg_data) - 1)
+            segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+        else:
+            # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-1.25s no-gesture gaps
+            leading_no_g = self._get_no_gesture_segment(max_duration_sec=0.25)
+            if leading_no_g is not None and len(leading_no_g) > 0:
+                segments.append(leading_no_g)
+
+            for g_id in self.gesture_sequence:
+                matching = [i for i, l in enumerate(self.emg_labels) if l == g_id]
+                idx = random.choice(matching)
+                segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+
+                no_g_seg = self._get_no_gesture_segment(max_duration_sec=1.25)
+                if no_g_seg is not None and len(no_g_seg) > 0:
+                    segments.append(no_g_seg)
+
+        return segments
+
+    def _get_no_gesture_segment(self, max_duration_sec: float = 1.25) -> npt.NDArray[np.floating] | None:
+        max_samples = int(max_duration_sec * self.sampling_rate)
+        if max_samples <= 0:
+            return None
+        num_samples = random.randint(0, max_samples)
+        if num_samples == 0:
+            return None
+
+        # Try noGesture (label 0) in emg_data
+        matching = [i for i, l in enumerate(self.emg_labels) if l == 0]
+        assert matching, "Cannot _get_no_gesture_segment: matching is empty"
+        rec = np.asarray(self.emg_data[random.choice(matching)], dtype=np.float64)
+        if len(rec) >= num_samples:
+            start_i = random.randint(0, len(rec) - num_samples)
+            return rec[start_i : start_i + num_samples]
+        return rec[:num_samples]
+
