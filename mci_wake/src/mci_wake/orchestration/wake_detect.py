@@ -139,6 +139,8 @@ class WakeDetect:
                         print(f"{str(time.time())} wake detected")
                         winsound.Beep(1000, 250)
                         curr_model = 0
+                        if hasattr(self.odh, "on_wake_detected"):
+                            self.odh.on_wake_detected()
                     else:
                         print(f"{str(time.time())} State transition from {curr_model} to {curr_model + 1}")
                 else:

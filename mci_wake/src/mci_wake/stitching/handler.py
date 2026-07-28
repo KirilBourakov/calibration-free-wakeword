@@ -43,6 +43,11 @@ class StitchingDataHandler:
         self.end_idx = 0
         self.reset_idx = 0
 
+        self.target_regions: list[tuple[int, int]] = []
+        self.triggers: list[dict[str, Any]] = []
+        self.true_positives: int = 0
+        self.false_positives: int = 0
+
         self._stitch_more_data()
 
     def update(self) -> int:
@@ -93,8 +98,45 @@ class StitchingDataHandler:
         self.update()
         self.reset_idx = self.end_idx
 
+    def on_wake_detected(self, tolerance=.5) -> None:
+        """
+        Called by an orchestrator (e.g. WakeDetect) when a wake detection occurs.
+        Tracks true vs. false positives internally.
+        A trigger is a true positive if it occurs while being served a positive test case,
+        or up to [tolerance] seconds after being served a positive test case.
+        """
+        self.update()
+        current_idx = self.end_idx
+        tolerance_samples = int(tolerance * self.sampling_rate)
+
+        is_tp = any(
+            start <= current_idx <= end + tolerance_samples
+            for start, end in self.target_regions
+        )
+
+        if is_tp:
+            self.true_positives += 1
+        else:
+            self.false_positives += 1
+
+        self.triggers.append({
+            "sample_idx": current_idx,
+            "timestamp": time.time(),
+            "is_false_positive": not is_tp,
+        })
+
+    def get_trigger_stats(self) -> dict[str, Any]:
+        return {
+            "true_positives": self.true_positives,
+            "false_positives": self.false_positives,
+            "total_triggers": len(self.triggers),
+            "target_regions_count": len(self.target_regions),
+            "triggers": self.triggers,
+        }
+
     def _stitch_more_data(self) -> None:
-        new_segments = self._get_next_segments()
+        start_len = len(self.buffer)
+        new_segments, is_test_case = self._get_next_segments()
         if not new_segments:
             return
         if len(self.buffer) == 0:
@@ -105,10 +147,16 @@ class StitchingDataHandler:
         else:
             self.buffer = stitch([self.buffer] + new_segments)
 
-    def _get_next_segments(self) -> list[npt.NDArray[np.floating]]:
+        if is_test_case:
+            end_len = len(self.buffer)
+            self.target_regions.append((start_len, end_len))
+
+    def _get_next_segments(self) -> tuple[list[npt.NDArray[np.floating]], bool]:
         p_adl, p_emg, _ = self.probabilities
         segments: list[npt.NDArray[np.floating]] = []
         r = random.random()
+        is_test_case = False
+
         if r < p_adl:
             # empty adl data
             idx = random.randint(0, len(self.adl_data) - 1)
@@ -116,14 +164,12 @@ class StitchingDataHandler:
         elif r < p_adl + p_emg:
             # some random movement
             if len(self.gesture_sequence) == 1:
-                # If we only have one gesture, don't insert that gesture
                 target_g = self.gesture_sequence[0]
                 matching = [i for i, l in enumerate(self.emg_labels) if l != target_g]
                 if matching:
                     idx = random.choice(matching)
                     segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
             else:
-                # If we have several gestures, and insert the first gesture to our sequence, add some adl right after
                 idx = random.randint(0, len(self.emg_data) - 1)
                 segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
                 if len(self.gesture_sequence) > 1:
@@ -133,6 +179,7 @@ class StitchingDataHandler:
         else:
             # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-1.25s no-gesture gaps
             # Inserts [empty] [gesture 1] [empty] [gesture 2] ... [gesture n]
+            is_test_case = True
             leading_no_g = self._get_no_gesture_segment(max_duration_sec=0.25)
             if leading_no_g is not None and len(leading_no_g) > 0:
                 segments.append(leading_no_g)
@@ -147,7 +194,7 @@ class StitchingDataHandler:
                     if no_g_seg is not None and len(no_g_seg) > 0:
                         segments.append(no_g_seg)
 
-        return segments
+        return segments, is_test_case
 
     def _get_no_gesture_segment(self, max_duration_sec: float = 1.25) -> npt.NDArray[np.floating] | None:
         max_samples = int(max_duration_sec * self.sampling_rate)
@@ -165,4 +212,3 @@ class StitchingDataHandler:
             start_i = random.randint(0, len(rec) - num_samples)
             return rec[start_i : start_i + num_samples]
         return rec[:num_samples]
-
