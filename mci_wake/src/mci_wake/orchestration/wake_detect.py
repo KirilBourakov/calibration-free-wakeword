@@ -107,6 +107,7 @@ class WakeDetect:
         key_mapping: dict[str, str] | None = None,
         debug=True,
         normalize=True,
+        verbose=True,
     ):
         if key_mapping is None:
             key_mapping = {'Close': 'c', 'Flexion': 'f', 'Extension': 'e', 'Open': 'o', 'Pinch': 'p'}
@@ -115,6 +116,7 @@ class WakeDetect:
         self.window_size = window_size
         self.increment = increment
         self.buffer_size = buffer
+        self.verbose = verbose
         self.models = [ModelState(m, window_size, increment, buffer, normalize=normalize) for m in models]
         self.template_size = template_size
         self.min_template_size = min_template_size
@@ -136,7 +138,6 @@ class WakeDetect:
             if counts['emg'][0][0] >= expected_count:
                 # Fetch and reverse
                 move = self.models[curr_model].next_step(self.odh, self.template_size)
-                print(move)
 
                 if move:
                     self.odh.reset()
@@ -146,12 +147,13 @@ class WakeDetect:
                     last_step_time = time.time()
 
                     if curr_model == len(self.models):
-                        print(f"{str(time.time())} wake detected")
+                        if self.verbose:
+                            print(f"{str(time.time())} wake detected")
                         winsound.Beep(1000, 250)
                         curr_model = 0
                         if hasattr(self.odh, "on_wake_detected"):
                             self.odh.on_wake_detected()
-                    else:
+                    elif self.verbose:
                         print(f"{str(time.time())} State transition from {curr_model} to {curr_model + 1}")
                 else:
                     expected_count = min(expected_count + 10, self.template_size)
@@ -162,5 +164,6 @@ class WakeDetect:
                         expected_count = self.min_template_size
                         last_step_time = None
                         curr_model = 0
-                        print(f"{str(time.time())} reset")
+                        if self.verbose:
+                            print(f"{str(time.time())} reset")
             time.sleep(0.005)

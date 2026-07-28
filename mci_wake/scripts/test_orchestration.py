@@ -40,7 +40,7 @@ def main():
 
     models = get_models()
     emg_data_all, labels_all, subject_ids_all, adl_data, adl_ids = filter_training(
-        *load_raw_data(), *[m.config.customers for m in models]
+        *load_raw_data(), # *[m.config.customers for m in models]
     )
 
     gestures = ["pinch", "fist"]
