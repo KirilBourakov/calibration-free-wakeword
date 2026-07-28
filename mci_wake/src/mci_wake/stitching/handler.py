@@ -29,6 +29,8 @@ class StitchingDataHandler:
         gestures: list[str] | list[int],
         sampling_rate: float = 200.0,
         probabilities: tuple[float, float, float] = (0.5, 0.5, 0.0),
+        realtime: bool = True,
+        step_samples: int = 5,
     ):
         assert len(probabilities) == 3, "probabilities must be a tuple of 3 floats"
         assert abs(sum(probabilities) - 1.0) < 1e-5, "probabilities must sum to 1.0"
@@ -39,11 +41,18 @@ class StitchingDataHandler:
         self.sampling_rate = sampling_rate
         self.probabilities = probabilities
         self.gestures = gestures
+        self.realtime = realtime
+        self.step_samples = step_samples
 
         self.gesture_sequence = [
             gesture_mapping[g] if isinstance(g, str) and g in gesture_mapping else int(g)
             for g in gestures
         ]
+
+        # Precompute label indices
+        self._label_indices: dict[Any, list[int]] = {}
+        for idx, label in enumerate(self.emg_labels):
+            self._label_indices.setdefault(label, []).append(idx)
 
         self.start_time: float | None = None
         self.buffer: npt.NDArray[np.floating] = np.zeros((0, 8), dtype=np.float64)
@@ -55,11 +64,21 @@ class StitchingDataHandler:
 
         self._stitch_more_data()
 
+    def get_virtual_timestamp(self) -> float:
+        if self.realtime:
+            return time.time()
+        return self.end_idx / self.sampling_rate
+
+    def advance(self, samples: int) -> None:
+        self.end_idx += samples
+        self.update()
+
     def update(self) -> int:
-        if self.start_time is None:
-            self.start_time = time.time()
-        elapsed = time.time() - self.start_time
-        self.end_idx = int(elapsed * self.sampling_rate)
+        if self.realtime:
+            if self.start_time is None:
+                self.start_time = time.time()
+            elapsed = time.time() - self.start_time
+            self.end_idx = int(elapsed * self.sampling_rate)
 
         while self.end_idx >= len(self.buffer):
             prev_len = len(self.buffer)
@@ -90,6 +109,9 @@ class StitchingDataHandler:
         count : dict
             Dict with key 'emg' mapping to array [[samples_since_reset]].
         """
+        if not self.realtime and N > 0 and self.end_idx == self.reset_idx:
+            self.end_idx += self.step_samples
+
         self.update()
         samples_since_reset = max(0, self.end_idx - self.reset_idx)
         target_len = N if N > 0 else samples_since_reset
@@ -124,7 +146,7 @@ class StitchingDataHandler:
 
         self.triggers.append({
             "sample_idx": current_idx,
-            "timestamp": time.time(),
+            "timestamp": self.get_virtual_timestamp(),
             "is_false_positive": is_fp,
         })
 
@@ -155,17 +177,19 @@ class StitchingDataHandler:
         new_segments, is_test_case = self._get_next_segments()
         if not new_segments:
             return
+
         if len(self.buffer) == 0:
             if len(new_segments) == 1:
                 self.buffer = new_segments[0].copy()
             else:
                 self.buffer = stitch(new_segments)
         else:
-            self.buffer = stitch([self.buffer] + new_segments)
+            self.buffer = stitch([self.buffer] + new_segments, in_place=True)
 
         if is_test_case:
             end_len = len(self.buffer)
             self.target_regions.append(TargetRegion(start=start_len, end=end_len))
+
 
     def _get_next_segments(self) -> tuple[list[npt.NDArray[np.floating]], bool]:
         p_adl, p_emg, _ = self.probabilities
@@ -181,7 +205,9 @@ class StitchingDataHandler:
             # some random movement
             if len(self.gesture_sequence) == 1:
                 target_g = self.gesture_sequence[0]
-                matching = [i for i, l in enumerate(self.emg_labels) if l != target_g]
+                matching = [
+                    idx for l, idxs in self._label_indices.items() if l != target_g for idx in idxs
+                ]
                 if matching:
                     idx = random.choice(matching)
                     segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
@@ -201,7 +227,8 @@ class StitchingDataHandler:
                 segments.append(leading_no_g)
 
             for i, g_id in enumerate(self.gesture_sequence):
-                matching = [i for i, l in enumerate(self.emg_labels) if l == g_id]
+                matching = self._label_indices.get(g_id, [])
+                assert matching, f"No EMG data found matching gesture {g_id}"
                 idx = random.choice(matching)
                 segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
 
@@ -221,10 +248,11 @@ class StitchingDataHandler:
             return None
 
         # Try noGesture (label 0) in emg_data
-        matching = [i for i, l in enumerate(self.emg_labels) if l == 0]
+        matching = self._label_indices.get(0, [])
         assert matching, "Cannot _get_no_gesture_segment: matching is empty"
         rec = np.asarray(self.emg_data[random.choice(matching)], dtype=np.float64)
         if len(rec) >= num_samples:
             start_i = random.randint(0, len(rec) - num_samples)
             return rec[start_i : start_i + num_samples]
         return rec[:num_samples]
+

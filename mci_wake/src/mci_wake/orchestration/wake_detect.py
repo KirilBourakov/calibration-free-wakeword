@@ -104,14 +104,11 @@ class WakeDetect:
         template_size=250,
         min_template_size=150,
         sequence_timeout = 2.0,
-        key_mapping: dict[str, str] | None = None,
         debug=True,
         normalize=True,
         verbose=True,
+        realtime: bool = True,
     ):
-        if key_mapping is None:
-            key_mapping = {'Close': 'c', 'Flexion': 'f', 'Extension': 'e', 'Open': 'o', 'Pinch': 'p'}
-
         self.odh = odh
         self.window_size = window_size
         self.increment = increment
@@ -121,18 +118,38 @@ class WakeDetect:
         self.template_size = template_size
         self.min_template_size = min_template_size
         self.sequence_timeout = sequence_timeout
-        self.key_mapping = key_mapping
         self.debug = debug
+        self.realtime = realtime
+        self.running = False
 
-    def run(self):
+    def stop(self) -> None:
+        """Stops the detection loop if running in a background thread."""
+        self.running = False
+
+    def _get_timestamp(self) -> float:
+        if hasattr(self.odh, "get_virtual_timestamp"):
+            return self.odh.get_virtual_timestamp()
+        return time.time()
+
+    def run(self, duration_sec: float | None = None):
         """
         Main loop for gesture detection.
         Runs a sliding window over incoming EMG data and makes predictions based on the trained model.
         """
+        self.running = True
         expected_count = self.min_template_size
         curr_model = 0
         last_step_time = None
-        while True:
+        start_ts = self._get_timestamp()
+
+        while self.running:
+            curr_ts = self._get_timestamp()
+            if duration_sec is not None and (curr_ts - start_ts) >= duration_sec:
+                break
+
+            if not self.realtime and hasattr(self.odh, "advance"):
+                self.odh.advance(self.increment)
+
             # Get and process EMG data
             _, counts = self.odh.get_data(self.window_size)
             if counts['emg'][0][0] >= expected_count:
@@ -144,20 +161,21 @@ class WakeDetect:
                     self.models[curr_model].reset()
                     expected_count = self.min_template_size
                     curr_model += 1
-                    last_step_time = time.time()
+                    last_step_time = self._get_timestamp()
 
                     if curr_model == len(self.models):
                         if self.verbose:
-                            print(f"{str(time.time())} wake detected")
-                        winsound.Beep(1000, 250)
+                            print(f"{str(last_step_time)} wake detected")
+                        if self.realtime:
+                            winsound.Beep(1000, 250)
                         curr_model = 0
                         if hasattr(self.odh, "on_wake_detected"):
                             self.odh.on_wake_detected()
                     elif self.verbose:
-                        print(f"{str(time.time())} State transition from {curr_model} to {curr_model + 1}")
+                        print(f"{str(last_step_time)} State transition from {curr_model} to {curr_model + 1}")
                 else:
                     expected_count = min(expected_count + 10, self.template_size)
-                    if last_step_time and time.time() - last_step_time > self.sequence_timeout:
+                    if last_step_time and (curr_ts - last_step_time) > self.sequence_timeout:
                         self.odh.reset()
                         for model in self.models:
                             model.reset()
@@ -165,5 +183,7 @@ class WakeDetect:
                         last_step_time = None
                         curr_model = 0
                         if self.verbose:
-                            print(f"{str(time.time())} reset")
-            time.sleep(0.005)
+                            print(f"{str(curr_ts)} reset")
+
+            if self.realtime:
+                time.sleep(0.005)
