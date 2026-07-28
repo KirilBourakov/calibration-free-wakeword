@@ -25,8 +25,9 @@ class StitchingDataHandler:
         self.sampling_rate = sampling_rate
 
         self.time_last_call = time.time()
-        self.buffer = np.zeros(0)
+        self.buffer = np.zeros((0, 8))
         self.end_idx = 0
+        self.reset_idx = 0
 
     def update(self) -> int:
         elapsed = time.time() - self.time_last_call
@@ -57,17 +58,17 @@ class StitchingDataHandler:
         count : dict
             Dict with key 'emg' mapping to array [[samples_since_reset]].
         """
-        new = self.update()
-        start_idx = 0 if N == 0 else self.end_idx - N
-        start_idx = max(0, start_idx)
+        self.update()
+        samples_since_reset = max(0, self.end_idx - self.reset_idx)
+        target_len = N if N > 0 else samples_since_reset
+        start_idx = max(0, self.end_idx - target_len)
 
         data = self.buffer[start_idx:self.end_idx, :][::-1]
-        return {"emg": data}, {"emg": np.array([[new]], dtype=int)}
+        return {"emg": data}, {"emg": np.array([[samples_since_reset]], dtype=int)}
 
     def reset(self, modality: str | None = None) -> None:
         """
         Reset the sample counter for the specified modality (or all modalities).
         """
         self.time_last_call = time.time()
-        self.buffer = np.zeros(0)
-        self.end_idx = 0
+        self.reset_idx = self.end_idx
