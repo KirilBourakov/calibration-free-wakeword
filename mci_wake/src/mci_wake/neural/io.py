@@ -25,6 +25,7 @@ def load(path: str | Path) -> DiscreteClassifier:
 
 def save(classifier: DiscreteClassifier, path: str | Path) -> None:
     path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
 
     adapt = TypeAdapter(DiscreteClassifierConfig)
     with open(path / _CONFIG_NAME, "wb") as file:

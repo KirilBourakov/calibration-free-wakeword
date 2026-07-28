@@ -11,11 +11,11 @@ import random
 import pickle
 import json 
 import os 
-from typing import Any, List, Dict, Tuple, Optional, Union, cast
+from typing import Any, List, Dict, Tuple, Optional, Union, cast, Sequence
 import numpy.typing as npt
 from statistics import mode
 
-from mci_wake.neural.classifier import make_data_loader, DiscreteClassifierConfig, DiscreteClassifier
+from mci_wake.neural.classifier import make_data_loader, DiscreteClassifierConfig, DiscreteClassifier, TrainData
 from mci_wake.neural.lightning_module import DiscreteLightningModule
 from mci_wake.utils.normalize import safe_znormalize_global
 
@@ -32,7 +32,8 @@ def train_model(
     train_labels: npt.NDArray[Any],
     test_emg: npt.NDArray[Any],
     test_labels: npt.NDArray[Any],
-    model_config: DiscreteClassifierConfig = DiscreteClassifierConfig()
+    model_config: DiscreteClassifierConfig = DiscreteClassifierConfig(),
+    customers: TrainData | None = None,
 ) -> DiscreteClassifier:
     """Initializes and trains the DiscreteClassifier using the provided datasets.
 
@@ -42,10 +43,14 @@ def train_model(
         test_emg: Features for the testing set.
         test_labels: Labels for the testing set.
         model_config: the model configuration
+        customers: Optional list of customer/user IDs used for training.
 
     Returns:
         DiscreteClassifier: The trained classifier instance.
     """
+    if customers is not None:
+        model_config.customers = customers
+
     print("Fitting Discrete Classifier...")
     tr_dl: DataLoader = make_data_loader(train_emg, train_labels)
     te_dl: DataLoader = make_data_loader(test_emg, test_labels)
@@ -72,7 +77,7 @@ def train_model(
     return cast(DiscreteLightningModule, trainer.lightning_module).internals
 
 
-def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[np.object_]]:
+def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[np.object_], npt.NDArray[np.int_]]:
     """Loads ADL and gesture EMG data from the dataset alongside subject IDs.
 
     Returns:
@@ -82,16 +87,16 @@ def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDAr
             - subject_ids_all: Combined training and testing subject IDs.
             - adl_data: Loaded ADL EMG data.
     """
-    adl_data: npt.NDArray[np.object_] = load_disco_adls(ADL_DATA)
-    emg, imu, labels, myo_labels, subject_ids = load_epn_data(EPN_DATA)
+    adl_data, adl_subjects = split_disco_adls(*load_disco_adls(ADL_DATA))
+    emg, imu, labels, myo_labels, epn_subjects = load_epn_data(EPN_DATA)
 
     training_emg = np.array(emg['training'], dtype='object')
     testing_emg = np.array(emg['testing'], dtype='object')
     training_labels = np.array(labels['training'])
     testing_labels = np.array(labels['testing'])
 
-    training_subjects = np.array(subject_ids['training'])
-    testing_subjects = np.array(subject_ids['testing'])
+    training_subjects = np.array(epn_subjects['training'])
+    testing_subjects = np.array(epn_subjects['testing'])
 
     emg_data_all: npt.NDArray[np.object_] = np.hstack([training_emg, testing_emg])
     labels_all: npt.NDArray[Any] = np.hstack([training_labels, testing_labels])
@@ -101,7 +106,7 @@ def load_raw_data() -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDAr
     print(f"Loaded {len(emg_data_all)} gesture samples from EPN dataset across {n_subs} subjects.")
     print(f"Loaded {len(adl_data)} ADL noise segments.")
 
-    return emg_data_all, labels_all, subject_ids_all, adl_data
+    return emg_data_all, labels_all, subject_ids_all, adl_data, adl_subjects
 
 
 def preprocess_nm_data(emg_data_all: npt.NDArray[np.object_], labels_all: npt.NDArray[Any]) -> npt.NDArray[np.object_]:
@@ -177,12 +182,13 @@ def prepare_loso_datasets(
     labels_all: npt.NDArray[Any],
     subject_ids_all: npt.NDArray[Any],
     adl_data: npt.NDArray[np.object_],
+    adl_ids: npt.NDArray[np.int64],
     window_size: int,
     increment_size: int,
     test_subject_ids: Optional[List[int]] = None,
     test_subject_ratio: float = 0.1,
     random_seed: int = 42,
-) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
+) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], TrainData]:
     """Extracts features and splits data using Leave-One-Subject-Out (LOSO) cross-validation logic.
 
     Ensures that test subjects' gesture data is strictly isolated from the training set,
@@ -200,7 +206,7 @@ def prepare_loso_datasets(
         random_seed: Seed for random subject selection.
 
     Returns:
-        Tuple containing (train_emg, train_labels, test_emg, test_labels).
+        Tuple containing (train_emg, train_labels, test_emg, test_labels, train_subject_ids).
     """
     unique_subjects = np.unique(subject_ids_all)
     if test_subject_ids is None:
@@ -231,12 +237,20 @@ def prepare_loso_datasets(
     test_labels_final: npt.NDArray[Any] = np.hstack([test_labels_raw, np.zeros(len(adl_test))])
     test_emg_final: npt.NDArray[Any] = np.hstack([test_emg_feats, adl_test])
 
+    data = TrainData()
+    for s in np.unique(subject_ids_all[train_mask]):
+        item = s.item() if hasattr(s, "item") else s
+        data.emg.append(f"user{item}")
+    data.disco = [f"S{s}" for s in np.unique(adl_ids[:n_adl_train])]
+
     print(f"--- LOSO (Leave-One-Subject-Out) Dataset Split ---")
     print(f"Held-out test subject IDs ({len(test_subject_ids)} subjects): {test_subject_ids}")
+    print(f"Training EPN subjects ({len(data.emg)} subjects): {data.emg}")
+    print(f"Training ADL subjects ({len(data.disco)} subjects): {data.disco}")
     print(f"Final training set: {len(train_emg_final)} samples ({len(train_labels_raw)} gestures + {len(adl_train)} ADL)")
     print(f"Final testing set:  {len(test_emg_final)} samples ({len(test_labels_raw)} gestures + {len(adl_test)} ADL)")
 
-    return train_emg_final, train_labels_final, test_emg_final, test_labels_final
+    return train_emg_final, train_labels_final, test_emg_final, test_labels_final, data
 
 
 def extract_data(data: Dict[str, Any]) -> Tuple[Optional[npt.NDArray[Any]], Optional[npt.NDArray[Any]], Optional[int], Optional[int]]:
@@ -347,37 +361,76 @@ def load_epn_data(
 
     return emg_data, imu_data, labels, myo_labels, subject_ids
 
-def load_disco_adls(path: Path | str) -> npt.NDArray[np.object_]:
-    """Loads ADL (Activities of Daily Living) dataset and windows it into segments.
+def load_disco_adls(
+    path: Path | str,
+    min_len: int = 150
+) -> tuple[list[npt.NDArray[np.float64]], npt.NDArray[np.int_]]:
+    """Loads raw ADL dataset from disk, trims EMG channels, and tracks subject IDs.
 
     Args:
-        path: path to ADL dataset
+        path: Path to the ADL dataset root directory.
+        min_len: Minimum number of rows required to keep a recording.
     Returns:
-        npt.NDArray[np.object_]: An object array containing windowed ADL EMG signals.
+        tuple: (recordings, subject_ids) where `recordings` is a list of 2D EMG arrays
+               and `subject_ids` is a parallel integer array of the subject ID (1-15) for each recording.
     """
     path = Path(path)
-    adl_files = []
+    recordings = []
+    subject_ids = []
+
     for s in range(1, 16):
         sub_path = path / f"S{s}" / "ADL"
         if not sub_path.exists():
+            print(f"WARNING: {sub_path} doesn't exist")
             continue
-        files = next(walk(sub_path), (None, None, []))[2]
-        for f in files:
-            adl_files.append(str(sub_path / f))
 
-    adl_data_list = []
-    for af in adl_files:
-        if '.csv' in af:
-            adl_data_list.append(np.loadtxt(af, delimiter=','))
-    
-    if not adl_data_list:
-        return np.array([], dtype='object')
-        
-    adl_data = np.vstack(adl_data_list)
-    adl_data = adl_data[:, -8:]
+        for file_path in sub_path.glob("*.csv"):
+            data = np.loadtxt(file_path, delimiter=',')
 
-    adl_data_w = [adl_data[i : i + random.randint(150, 400)] for i in range(0, len(adl_data) - 400, 50)]
-    return np.array(adl_data_w, dtype='object')
+            # Guard against 1D arrays and filter out short recordings early
+            if data.ndim == 2 and len(data) >= min_len:
+                # Keep only the last 8 EMG channels
+                recordings.append(data[:, -8:])
+                subject_ids.append(s)
+            else:
+                print(f"WARNING: skipping invalid or too short recording for user {s} ({file_path.name})")
+
+    return recordings, np.array(subject_ids, dtype=int)
+
+
+def split_disco_adls(
+    recordings: Sequence[npt.NDArray[np.float64]],
+    subject_ids: npt.NDArray[np.int_],
+    window: tuple[int, int] = (150, 400),
+    step: int = 50
+) -> tuple[npt.NDArray[np.object_], npt.NDArray[np.int_]]:
+    """Windows continuous EMG recordings into randomized segments while preserving subject IDs.
+
+    Args:
+        recordings: Sequence of 2D arrays containing continuous EMG data.
+        subject_ids: Parallel array of subject IDs corresponding to each recording.
+        window: Tuple of (min_window, max_window) specifying slice lengths.
+        step: Step size (stride) between the start of consecutive windows.
+    Returns:
+        tuple: (windows, window_subject_ids) as parallel arrays of segmented data and subject labels.
+    """
+    min_window, max_window = window
+    windows = []
+    window_subject_ids = []
+
+    for data, s in zip(recordings, subject_ids):
+        # Secondary safety check in case data is passed directly to the splitter
+        if len(data) < min_window:
+            continue
+
+        for i in range(0, len(data) - min_window + 1, step):
+            max_possible_len = min(max_window, len(data) - i)
+            win_len = random.randint(min_window, max_possible_len)
+
+            windows.append(data[i : i + win_len])
+            window_subject_ids.append(s)
+
+    return np.array(windows, dtype='object'), np.array(window_subject_ids, dtype=int)
 
 def get_features(
     data: Union[npt.NDArray[Any], List[Any]], 

@@ -121,8 +121,8 @@ def load_dataset() -> Dict[str, Any]:
 
     # Try loading ADL data if train_utils is available
     try:
-        from mci_wake.data.train_utils import load_disco_adls, ADL_DATA
-        adl_data = load_disco_adls(ADL_DATA)
+        from mci_wake.data.train_utils import split_disco_adls, load_disco_adls, ADL_DATA
+        adl_data, _ = split_disco_adls(*load_disco_adls(ADL_DATA))
         print(f"[Info] Loaded {len(adl_data)} ADL noise segments.")
         for i, adl_sample in enumerate(adl_data):
             adl_arr = np.array(adl_sample, dtype=np.float32)
@@ -147,7 +147,7 @@ def load_dataset() -> Dict[str, Any]:
         print("[Info] No cached pickle found, attempting load_raw_data()...")
         try:
             from mci_wake.data.train_utils import load_raw_data
-            emg_data_all, labels_all, subject_ids_all, adl_data = load_raw_data()
+            emg_data_all, labels_all, subject_ids_all, adl_data, _ = load_raw_data()
             for i in range(len(emg_data_all)):
                 emg_arr = np.array(emg_data_all[i], dtype=np.float32)
                 lbl = int(labels_all[i])

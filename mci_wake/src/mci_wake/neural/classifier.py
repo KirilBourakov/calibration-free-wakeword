@@ -5,11 +5,18 @@ import numpy as np
 import random
 import pickle
 
+from typing import Any
+
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from torch import Tensor
 from torch.nn.functional import softmax
 from torch.utils.data import DataLoader, Dataset
+
+@dataclass
+class TrainData:
+    disco: list[str] = Field(default_factory=list)
+    emg: list[str] = Field(default_factory=list)
 
 @dataclass
 class DiscreteClassifierConfig:
@@ -22,6 +29,7 @@ class DiscreteClassifierConfig:
     conv_kernel_sizes: list[int] = Field(default_factory=lambda: [3, 3, 3])
     conv_out_channels: list[int] = Field(default_factory=lambda: [16, 32, 64])
     lr: float = 1e-3
+    customers: TrainData = Field(default_factory=TrainData)
 
     @property
     def file_name(self):

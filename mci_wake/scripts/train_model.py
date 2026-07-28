@@ -9,24 +9,26 @@ def main() -> None:
     TEST_SUBJECT_RATIO: float = 0.1  # Hold out 10% of subjects for unseen test evaluation
 
     # 1. Load data alongside subject IDs
-    emg_data_all, labels_all, subject_ids_all, adl_data = load_raw_data()
+    emg_data_all, labels_all, subject_ids_all, adl_data, adl_ids = load_raw_data()
+
 
     # 2. Preprocess
     emg_data_all = preprocess_nm_data(emg_data_all, labels_all)
 
     # 3. Prepare features and splits using LOSO
-    train_emg, train_labels, test_emg, test_labels = prepare_loso_datasets(
+    train_emg, train_labels, test_emg, test_labels, train_subject_ids = prepare_loso_datasets(
         emg_data_all,
         labels_all,
         subject_ids_all,
         adl_data,
+        adl_ids,
         WINDOW_SIZE,
         INCREMENT_SIZE,
         test_subject_ratio=TEST_SUBJECT_RATIO,
     )
 
-    # 4. Train
-    train_model(train_emg, train_labels, test_emg, test_labels)
+    # # 4. Train
+    # train_model(train_emg, train_labels, test_emg, test_labels, customers=train_subject_ids)
 
 if __name__ == "__main__":
     main()
