@@ -2,15 +2,11 @@
 Run Base Model across StitchingDataHandler output and plot results.
 
 Highlights TargetRegions (synthetic wake sequence test cases) in red.
-
-Usage:
-    python scripts/run_base_model_stitching.py [--model-path PATH] [--duration SECONDS] [--save-plot PATH]
 """
 
 import sys
 import os
 from pathlib import Path
-import argparse
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -28,15 +24,16 @@ from mci_wake.stitching.handler import StitchingDataHandler
 from mci_wake.utils.normalize import safe_znormalize_global
 from libemg.utils import get_windows
 
-# Inverse gesture mapping for plot labels
 GESTURE_NAMES = {v: k for k, v in gesture_mapping.items()}
 
 DEFAULT_MODEL_PATH = ROOT_DIR / "other" / "models" / "base"
-gestures=['fist']
-probabilities=(.4, .4, .2)
-duration_sec=60
-window_samples=10
-stride_samples=5
+
+gestures = ['pinch']
+probabilities = (0.8, 0, 0.2)
+duration_sec = 300
+template_size = 250  # Template buffer size matching wake_detect.py
+window_size = 10     # Subwindow size for get_windows matching wake_detect.py
+increment = 5        # Subwindow & streaming step size matching wake_detect.py
 
 def main():
     # Safe unpickling globals for PyTorch 2.6+
@@ -75,16 +72,15 @@ def main():
     print(f"Generated {len(handler.target_regions)} target regions.")
 
     # 4. Run Base Model sliding window inference over StitchingDataHandler output
-    print(f"Running base model sliding window inference (window={window_samples}, stride={stride_samples})...")
+    print(f"Running base model sliding window inference (template_size={template_size}, window_size={window_size}, increment={increment})...")
     time_points = []
     raw_outputs = []  # shape: (N_steps, n_classes)
 
-    for sample_idx in range(window_samples, num_samples, stride_samples):
-        window_raw = emg_buffer[sample_idx - window_samples : sample_idx]
-        window_norm = safe_znormalize_global(window_raw)
-        
-        # Extract features (32, 8, 10)
-        feats = get_windows(window_norm, 10, 5)
+    for sample_idx in range(template_size, num_samples, increment):
+        window_raw = emg_buffer[sample_idx - template_size : sample_idx]
+        window_norm = window_raw #safe_znormalize_global(window_raw)
+
+        feats = get_windows(window_norm, window_size, increment)
         
         # Predict logits
         _, _, output_logits = base_model.predict(feats)
@@ -157,6 +153,7 @@ def main():
     plt.show()
 
     return fig
+
 
 if __name__ == "__main__":
     main()
