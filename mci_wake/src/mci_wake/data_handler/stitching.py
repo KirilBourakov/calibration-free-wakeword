@@ -5,6 +5,7 @@ import time
 import numpy as np
 import numpy.typing as npt
 
+from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.stitching.hanning import stitch
 from mci_wake.data.train_utils import gesture_mapping
 
@@ -15,7 +16,7 @@ class TargetRegion:
     end: int
     status: str = "pending"  # "pending", "detected", "missed"
 
-class StitchingDataHandler:
+class StitchingDataHandler(OfflineCapableAbstractDataHandler):
     """
     Simulates an OnlineDataHandler for testing by stitching discrete EMG / ADL datasets
     into a continuous synthetic livestream using constant-power Hanning cross-fading.
@@ -64,10 +65,14 @@ class StitchingDataHandler:
 
         self._stitch_more_data()
 
-    def get_virtual_timestamp(self) -> float:
+    def get_time(self) -> float:
         if self.realtime:
             return time.time()
         return self.end_idx / self.sampling_rate
+
+    @property
+    def is_offline(self):
+        return not self.realtime
 
     def advance(self, samples: int) -> None:
         self.end_idx += samples
@@ -146,7 +151,7 @@ class StitchingDataHandler:
 
         self.triggers.append({
             "sample_idx": current_idx,
-            "timestamp": self.get_virtual_timestamp(),
+            "timestamp": self.get_time(),
             "is_false_positive": is_fp,
         })
 

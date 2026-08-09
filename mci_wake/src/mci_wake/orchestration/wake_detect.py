@@ -1,16 +1,14 @@
 import winsound
 import numpy as np
-import torch.nn.functional as F
-import torch
 from libemg.feature_extractor import FeatureExtractor
 from libemg.utils import get_windows
-import pyautogui
 import time
 import statistics
 
 from libemg.data_handler import OnlineDataHandler
+
+from mci_wake.data_handler.abstract import AbstractDataHandler, OfflineCapableAbstractDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier
-from mci_wake.stitching.handler import StitchingDataHandler
 from mci_wake.utils.normalize import safe_znormalize_global
 
 class ModelState:
@@ -30,7 +28,7 @@ class ModelState:
         self.normalize = normalize
         self.buffer = []
 
-    def next_step(self, odh: OnlineDataHandler | StitchingDataHandler, size: int):
+    def next_step(self, odh: AbstractDataHandler, size: int):
         data, counts = odh.get_data(size)
         emg = data['emg'][::-1]
         feats = self._get_features([emg], None, None)[0]
@@ -88,15 +86,13 @@ class WakeDetect:
         The size of each EMG template (in samples). Default is 250 (1.5s for the Myo Armband).
     min_template_size: int, optional
         The minimum number of samples required before starting to make predictions. Default is 150.
-    key_mapping: dict, optional
-        A dictionary mapping gesture names to keyboard keys.
     debug: bool, optional
         If True, enables debug mode with additional print statements. Default is True.
     """
 
     def __init__(
         self,
-        odh: OnlineDataHandler | StitchingDataHandler,
+        odh: AbstractDataHandler,
         window_size: int,
         increment: int,
         models: list[DiscreteClassifier],
@@ -106,8 +102,7 @@ class WakeDetect:
         sequence_timeout = 2.0,
         debug=True,
         normalize=True,
-        verbose=True,
-        realtime: bool = True,
+        verbose=True
     ):
         self.odh = odh
         self.window_size = window_size
@@ -119,17 +114,11 @@ class WakeDetect:
         self.min_template_size = min_template_size
         self.sequence_timeout = sequence_timeout
         self.debug = debug
-        self.realtime = realtime
         self.running = False
 
     def stop(self) -> None:
         """Stops the detection loop if running in a background thread."""
         self.running = False
-
-    def _get_timestamp(self) -> float:
-        if hasattr(self.odh, "get_virtual_timestamp"):
-            return self.odh.get_virtual_timestamp()
-        return time.time()
 
     def run(self, duration_sec: float | None = None):
         """
@@ -140,14 +129,15 @@ class WakeDetect:
         expected_count = self.min_template_size
         curr_model = 0
         last_step_time = None
-        start_ts = self._get_timestamp()
+        start_ts = self.odh.get_time()
 
         while self.running:
-            curr_ts = self._get_timestamp()
+            curr_ts = self.odh.get_time()
             if duration_sec is not None and (curr_ts - start_ts) >= duration_sec:
                 break
 
-            if not self.realtime and hasattr(self.odh, "advance"):
+            if self.odh.is_offline:
+                assert isinstance(self.odh, OfflineCapableAbstractDataHandler)
                 self.odh.advance(self.increment)
 
             # Get and process EMG data
@@ -161,16 +151,15 @@ class WakeDetect:
                     self.models[curr_model].reset()
                     expected_count = self.min_template_size
                     curr_model += 1
-                    last_step_time = self._get_timestamp()
+                    last_step_time = self.odh.get_time()
 
                     if curr_model == len(self.models):
                         if self.verbose:
                             print(f"{str(last_step_time)} wake detected")
-                        if self.realtime:
+                        if not self.odh.is_offline:
                             winsound.Beep(1000, 250)
+                        self.odh.on_wake_detected()
                         curr_model = 0
-                        if hasattr(self.odh, "on_wake_detected"):
-                            self.odh.on_wake_detected()
                     elif self.verbose:
                         print(f"{str(last_step_time)} State transition from {curr_model} to {curr_model + 1}")
                 else:
@@ -185,5 +174,5 @@ class WakeDetect:
                         if self.verbose:
                             print(f"{str(curr_ts)} reset")
 
-            if self.realtime:
+            if not self.odh.is_offline:
                 time.sleep(0.005)

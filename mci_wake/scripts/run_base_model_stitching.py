@@ -5,7 +5,6 @@ Highlights TargetRegions (synthetic wake sequence test cases) in red.
 """
 
 import sys
-import os
 from pathlib import Path
 import numpy as np
 import torch
@@ -20,8 +19,7 @@ if str(SRC_DIR) not in sys.path:
 from mci_wake.data.train_utils import load_raw_data, gesture_mapping
 from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
 from mci_wake.neural.io import load
-from mci_wake.stitching.handler import StitchingDataHandler
-from mci_wake.utils.normalize import safe_znormalize_global
+from mci_wake.data_handler.stitching import StitchingDataHandler
 from libemg.utils import get_windows
 
 GESTURE_NAMES = {v: k for k, v in gesture_mapping.items()}

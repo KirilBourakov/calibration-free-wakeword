@@ -3,13 +3,11 @@ import os
 import torch
 from pydantic import TypeAdapter
 
+from mci_wake.data_handler.online import CompatibleOnlineDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
 from mci_wake.neural.io import load
 from mci_wake.neural.lightning_module import DiscreteLightningModule
 from mci_wake.orchestration.wake_detect import WakeDetect
-
-from libemg.streamers import myo_streamer
-from libemg.data_handler import OnlineDataHandler
 
 if __name__ == "__main__":
     # Allowlist custom classes for safe unpickling in PyTorch 2.6+
@@ -17,7 +15,6 @@ if __name__ == "__main__":
     
     adapter = TypeAdapter(DiscreteClassifierConfig)
 
-    _, sm = myo_streamer()
     lightning_model = DiscreteLightningModule.load_from_checkpoint(
         r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_2\checkpoints\best-model-epoch=05-val_acc=0.98.ckpt"
     )
@@ -29,5 +26,5 @@ if __name__ == "__main__":
 
     model2 = lightning_model.internals
 
-    discrete = WakeDetect(OnlineDataHandler(sm), 10, 5, [model1, model2])
+    discrete = WakeDetect(CompatibleOnlineDataHandler(), 10, 5, [model1, model2])
     discrete.run()
