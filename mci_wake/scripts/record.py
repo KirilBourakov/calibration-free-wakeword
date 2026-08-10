@@ -1,15 +1,15 @@
 import sys
 import time
-import json
 import msvcrt
-from dataclasses import asdict
+import numpy as np
+from pydantic import TypeAdapter
 from libemg.streamers import myo_streamer
 from libemg.data_handler import OnlineDataHandler
 from mci_wake.data_handler.recording import RecordingFileContents, RecordingFileRegions
 
+output_filename = "emg_recording.json"
 
 def main():
-    # Initialize libemg streamer and data handler
     streamer, sm = myo_streamer()
     odh = OnlineDataHandler(sm)
 
@@ -57,26 +57,24 @@ def main():
         time.sleep(0.005)
 
     # Stop streamer process
-    if hasattr(streamer, "stop"):
-        try:
-            streamer.stop()
-        except Exception:
-            pass
+    streamer.stop()
 
     # Save recording and marked regions into a single JSON file
-    output_filename = "emg_recording.json"
+
     recording_data = RecordingFileContents(
-        emg=emg_data,
-        timestamps=timestamps,
+        emg=np.asarray(emg_data, dtype=np.float64),
+        timestamps=np.asarray(timestamps, dtype=np.float64),
         regions=regions,
     )
 
     with open(output_filename, "w") as f:
-        json.dump(asdict(recording_data), f, indent=2)
+        f.write(TypeAdapter(RecordingFileContents).dump_json(recording_data, indent=2).decode())
+
 
     print(f"\nRecording finished. Saved to '{output_filename}' ({len(emg_data)} samples, {len(regions)} marked regions).")
 
 
 if __name__ == "__main__":
     main()
+
 

@@ -62,3 +62,7 @@ class OfflineCapableAbstractDataHandler(AbstractDataHandler, ABC):
     @property
     def is_offline(self) -> bool:
         raise NotImplementedError()
+
+    @property
+    def is_done(self):
+        return False

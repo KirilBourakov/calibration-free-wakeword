@@ -142,6 +142,7 @@ class WakeDetect:
 
             # Get and process EMG data
             _, counts = self.odh.get_data(self.window_size)
+            # offline emg has run out of data
             if counts['emg'][0][0] >= expected_count:
                 # Fetch and reverse
                 move = self.models[curr_model].next_step(self.odh, self.template_size)
@@ -173,6 +174,11 @@ class WakeDetect:
                         curr_model = 0
                         if self.verbose:
                             print(f"{str(curr_ts)} reset")
+
+            if self.odh.is_offline:
+                assert isinstance(self.odh, OfflineCapableAbstractDataHandler)
+                if self.odh.is_done:
+                    self.running = False
 
             if not self.odh.is_offline:
                 time.sleep(0.005)
