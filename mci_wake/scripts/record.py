@@ -2,8 +2,10 @@ import sys
 import time
 import json
 import msvcrt
+from dataclasses import asdict
 from libemg.streamers import myo_streamer
 from libemg.data_handler import OnlineDataHandler
+from mci_wake.data_handler.recording import RecordingFileContents, RecordingFileRegions
 
 
 def main():
@@ -13,7 +15,7 @@ def main():
 
     emg_data = []
     timestamps = []
-    regions = []
+    regions: list[RecordingFileRegions] = []
     active_start_time = None
 
     print("Streaming live EMG data...")
@@ -34,7 +36,7 @@ def main():
                     active_start_time = now
                     print(f"[MARK START] t = {active_start_time:.3f}s")
                 else:
-                    regions.append({"start_time": active_start_time, "end_time": now})
+                    regions.append(RecordingFileRegions(start=active_start_time, end=now))
                     print(f"[MARK END]   t = {now:.3f}s (duration: {now - active_start_time:.3f}s)")
                     active_start_time = None
             elif key in ["q", "\x1b"]:
@@ -63,17 +65,18 @@ def main():
 
     # Save recording and marked regions into a single JSON file
     output_filename = "emg_recording.json"
-    data = {
-        "emg": emg_data,
-        "timestamps": timestamps,
-        "regions": regions,
-    }
+    recording_data = RecordingFileContents(
+        emg=emg_data,
+        timestamps=timestamps,
+        regions=regions,
+    )
 
     with open(output_filename, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(asdict(recording_data), f, indent=2)
 
     print(f"\nRecording finished. Saved to '{output_filename}' ({len(emg_data)} samples, {len(regions)} marked regions).")
 
 
 if __name__ == "__main__":
     main()
+
