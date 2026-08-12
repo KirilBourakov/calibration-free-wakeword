@@ -4,14 +4,14 @@ import msvcrt
 import numpy as np
 from pydantic import TypeAdapter
 from libemg.streamers import myo_streamer
-from libemg.data_handler import OnlineDataHandler
+from mci_wake.data_handler.online import CompatibleOnlineDataHandler
 from mci_wake.data_handler.recording import RecordingFileContents, RecordingFileRegions
 
 output_filename = r"/mci_wake/recordings/pinchfist1.json"
 
 def main():
     streamer, sm = myo_streamer()
-    odh = OnlineDataHandler(sm)
+    odh = CompatibleOnlineDataHandler(sm)
 
     emg_data = []
     timestamps = []
@@ -44,11 +44,11 @@ def main():
                 break
 
         # Read new EMG data from streamer
-        val, count = odh.get_data(N=0, filter=False)
-        new_count = count["emg"][0, 0]
+        dh_out = odh.get_data(N=0, filter=False)
+        new_count = dh_out.count
         num_new = new_count - last_count
         if num_new > 0:
-            new_samples = val["emg"][:num_new, :][::-1]
+            new_samples = dh_out.emg[:num_new, :][::-1]
             now = time.time() - start_time
             emg_data.extend(new_samples.tolist())
             timestamps.extend([now] * num_new)

@@ -4,7 +4,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from mci_wake.data_handler.types import TriggerStats
+from mci_wake.data_handler.types import DataHandlerOutput, TriggerStats
 
 
 class AbstractDataHandler(ABC):
@@ -16,23 +16,21 @@ class AbstractDataHandler(ABC):
     @abstractmethod
     def get_data(
         self, N: int = 0, filter: bool = True
-    ) -> tuple[dict[str, npt.NDArray[Any]], dict[str, npt.NDArray[Any]]]:
+    ) -> DataHandlerOutput:
         """
-        Grab data from the handler matching OnlineDataHandler interface.
+        Grab data from the handler.
 
         Parameters
         ----------
         N : int
             Number of samples to grab. If zero, grabs all samples accumulated since last reset.
         filter : bool
-            Maintained for OnlineDataHandler interface compatibility.
+            Maintained for interface compatibility.
 
         Returns
         -------
-        val : dict
-            Dict mapping modalities (e.g. 'emg') to numpy arrays (newest sample first).
-        count : dict
-            Dict mapping modalities to numpy array [[sample_count_since_reset]].
+        DataHandlerOutput
+            Object containing emg numpy array (newest sample first) and sample count since reset.
         """
         pass
 

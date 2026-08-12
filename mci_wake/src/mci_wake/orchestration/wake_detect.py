@@ -29,8 +29,8 @@ class ModelState:
         self.buffer = []
 
     def next_step(self, odh: AbstractDataHandler, size: int):
-        data, counts = odh.get_data(size)
-        emg = data['emg'][::-1]
+        dh_out = odh.get_data(size)
+        emg = dh_out.emg[::-1]
         feats = self._get_features([emg], None, None)[0]
 
         # predict
@@ -141,9 +141,9 @@ class WakeDetect:
                 self.odh.advance(self.increment)
 
             # Get and process EMG data
-            _, counts = self.odh.get_data(self.window_size)
+            dh_out = self.odh.get_data(self.window_size)
             # offline emg has run out of data
-            if counts['emg'][0][0] >= expected_count:
+            if dh_out.count >= expected_count:
                 # Fetch and reverse
                 move = self.models[curr_model].next_step(self.odh, self.template_size)
 

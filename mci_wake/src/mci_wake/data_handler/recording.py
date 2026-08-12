@@ -7,7 +7,8 @@ from pydantic import BeforeValidator, ConfigDict, PlainSerializer, TypeAdapter
 from pydantic.dataclasses import dataclass
 
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
-from mci_wake.data_handler.types import RecordingTriggers, TriggerStats
+from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
+
 
 
 def _validate_ndarray(v: Any) -> npt.NDArray[np.float64]:
@@ -74,12 +75,12 @@ class RecordingDataHandler(OfflineCapableAbstractDataHandler):
 
     def get_data(
         self, N: int = 0, filter: bool = True
-    ) -> tuple[dict[str, npt.NDArray[Any]], dict[str, npt.NDArray[Any]]]:
+    ) -> DataHandlerOutput:
         samples_since_reset = max(0, self.end_idx - self.reset_idx)
         target_len = N if N > 0 else samples_since_reset
         start_idx = max(0, self.end_idx - target_len)
         data = self.recording.emg[start_idx : self.end_idx][::-1]
-        return {"emg": data}, {"emg": np.array([[samples_since_reset]], dtype=int)}
+        return DataHandlerOutput(emg=data, count=samples_since_reset)
 
     def reset(self, modality: str | None = None) -> None:
         self.reset_idx = self.end_idx

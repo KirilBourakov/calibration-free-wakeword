@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
-from mci_wake.data_handler.types import RecordingTriggers, TriggerStats
+from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
 from mci_wake.stitching.hanning import stitch
 from mci_wake.data.train_utils import gesture_mapping
 
@@ -97,24 +97,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
     def get_data(
         self, N: int = 0, filter: bool = True
-    ) -> tuple[dict[str, npt.NDArray[Any]], dict[str, npt.NDArray[Any]]]:
-        """
-        Grab data from the synthetic livestream matching OnlineDataHandler interface.
-
-        Parameters
-        ----------
-        N : int
-            Number of samples to grab. If zero, grabs all samples accumulated since last reset.
-        filter : bool
-            Maintained for OnlineDataHandler interface compatibility.
-
-        Returns
-        -------
-        val : dict
-            Dict with key 'emg' mapping to array of shape (N, n_channels) (newest sample first).
-        count : dict
-            Dict with key 'emg' mapping to array [[samples_since_reset]].
-        """
+    ) -> DataHandlerOutput:
         if not self.realtime and N > 0 and self.end_idx == self.reset_idx:
             self.end_idx += self.step_samples
 
@@ -124,7 +107,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         start_idx = max(0, self.end_idx - target_len)
 
         data = self.buffer[start_idx:self.end_idx, :][::-1]
-        return {"emg": data}, {"emg": np.array([[samples_since_reset]], dtype=int)}
+        return DataHandlerOutput(emg=data, count=samples_since_reset)
 
     def reset(self, modality: str | None = None) -> None:
         """

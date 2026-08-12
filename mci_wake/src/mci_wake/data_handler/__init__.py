@@ -6,7 +6,7 @@ from mci_wake.data_handler.recording import (
     RecordingFileContents,
     RecordingFileRegions,
 )
-from mci_wake.data_handler.types import RecordingTriggers, TriggerStats
+from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
 
 __all__ = [
     "AbstractDataHandler",
@@ -18,5 +18,6 @@ __all__ = [
     "RecordingFileRegions",
     "RecordingTriggers",
     "TriggerStats",
+    "DataHandlerOutput",
 ]
 
