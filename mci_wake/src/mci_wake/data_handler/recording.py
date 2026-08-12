@@ -31,6 +31,11 @@ class RecordingFileRegions:
     start: float
     end: float
 
+@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+class RecordingTriggers:
+    index: float
+    timestamp: float
+    is_fp: bool
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class RecordingFileContents:
@@ -50,6 +55,9 @@ class RecordingDataHandler(OfflineCapableAbstractDataHandler):
         self.path = Path(path)
         with open(self.path, "r") as f:
             self.recording = TypeAdapter(RecordingFileContents).validate_json(f.read())
+
+        self.detected = [False] * len(self.recording.regions)
+        self.triggers: list[RecordingTriggers] = []
 
         self.realtime = realtime
         self.sampling_rate = sampling_rate
@@ -86,4 +94,28 @@ class RecordingDataHandler(OfflineCapableAbstractDataHandler):
         return self.end_idx / self.sampling_rate
 
     def on_wake_detected(self, tolerance: float = 0.5) -> None:
-        pass
+        current_time = self.recording.timestamps[self.end_idx]
+
+        is_fp = True
+        for i, (detected, region) in enumerate(zip(self.detected, self.recording.regions)):
+            if not detected and region.start <= current_time <= region.end + tolerance:
+                self.detected[i] = True
+                is_fp = False
+
+        self.triggers.append(RecordingTriggers(
+            index=self.end_idx,
+            timestamp=self.get_time(),
+            is_fp=is_fp,
+        ))
+
+    def get_trigger_stats(self) -> dict[str, Any]:
+        tp = sum(1 for r in self.triggers if not r.is_fp)
+        fp = sum(1 for r in self.triggers if r.is_fp)
+        fn = sum(1 for r in self.detected if not r)
+        return {
+            "true_positives": tp,
+            "false_positives": fp,
+            "false_negatives": fn,
+            "total_triggers": len(self.triggers),
+            "triggers": self.triggers,
+        }

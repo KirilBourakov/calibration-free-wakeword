@@ -7,7 +7,7 @@ from libemg.streamers import myo_streamer
 from libemg.data_handler import OnlineDataHandler
 from mci_wake.data_handler.recording import RecordingFileContents, RecordingFileRegions
 
-output_filename = "emg_recording.json"
+output_filename = r"/mci_wake/recordings/pinchfist1.json"
 
 def main():
     streamer, sm = myo_streamer()

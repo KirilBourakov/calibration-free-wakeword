@@ -4,6 +4,7 @@ import threading
 import torch
 
 from mci_wake.data.train_utils import filter_training, load_raw_data
+from mci_wake.data_handler import RecordingDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
 from mci_wake.neural.lightning_module import DiscreteLightningModule
 from mci_wake.orchestration.wake_detect import WakeDetect
@@ -27,7 +28,7 @@ def print_stats(handler: StitchingDataHandler):
     print(f"False Positives: {stats['false_positives']}")
     print(f"False Negatives: {stats['false_negatives']}")
     print(f"Total Triggers:  {stats['total_triggers']}")
-    print(f"Target Regions:  {stats['target_regions_count']}")
+    # print(f"Target Regions:  {stats['target_regions_count']}")
     print("=======================\n")
 
 
@@ -55,6 +56,7 @@ def main():
         probabilities=(0.4, 0.4, 0.2),
         realtime=realtime,
     )
+    # handler = RecordingDataHandler(path=r"D:\Coding\calibration-free-wakeword\mci_wake\recordings\pinchfist1.json")
 
     if realtime:
         def print_stats_periodically():
