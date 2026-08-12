@@ -15,9 +15,37 @@ from typing import Any, List, Dict, Tuple, Optional, Union, cast, Sequence
 import numpy.typing as npt
 from statistics import mode
 
+from pydantic import Field, ConfigDict
+from pydantic.dataclasses import dataclass
+
 from mci_wake.neural.classifier import make_data_loader, DiscreteClassifierConfig, DiscreteClassifier, TrainData
 from mci_wake.neural.lightning_module import DiscreteLightningModule
 from mci_wake.utils.normalize import safe_znormalize_global
+
+
+@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+class EPNData:
+    emg: List[Any] = Field(default_factory=list)
+    imu: List[Any] = Field(default_factory=list)
+    labels: List[Any] = Field(default_factory=list)
+    myo_labels: List[Any] = Field(default_factory=list)
+    subject_ids: List[int] = Field(default_factory=list)
+
+    def __iter__(self):
+        return iter((self.emg, self.imu, self.labels, self.myo_labels, self.subject_ids))
+
+
+@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
+class RawData:
+    epn_emg: npt.NDArray[np.object_]
+    epn_labels: npt.NDArray[Any]
+    epn_subjects: npt.NDArray[Any]
+    adl_emg: npt.NDArray[np.object_]
+    adl_subjects: npt.NDArray[np.int_]
+
+    def __iter__(self):
+        return iter((self.epn_emg, self.epn_labels, self.epn_subjects, self.adl_emg, self.adl_subjects))
+
 
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
 
@@ -77,39 +105,29 @@ def train_model(
     return cast(DiscreteLightningModule, trainer.lightning_module).internals
 
 
-def load_raw_data(presplit_adl=True) -> Tuple[npt.NDArray[np.object_], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[np.object_], npt.NDArray[np.int_]]:
-    """Loads ADL and gesture EMG data from the dataset alongside subject IDs.
-
-    Returns:
-        Tuple containing:
-            - emg_data_all: Combined training and testing EMG data.
-            - labels_all: Combined training and testing labels.
-            - subject_ids_all: Combined training and testing subject IDs.
-            - adl_data: Loaded ADL EMG data.
-    """
+def load_raw_data(presplit_adl=True) -> RawData:
+    """Loads ADL and gesture EMG data from the dataset alongside subject IDs."""
     adl_data, adl_subjects = load_disco_adls(ADL_DATA)
     if presplit_adl:
         adl_data, adl_subjects = split_disco_adls(adl_data, adl_subjects)
 
-    emg, imu, labels, myo_labels, epn_subjects = load_epn_data(EPN_DATA)
+    epn = load_epn_data(EPN_DATA)
 
-    training_emg = np.array(emg['training'], dtype='object')
-    testing_emg = np.array(emg['testing'], dtype='object')
-    training_labels = np.array(labels['training'])
-    testing_labels = np.array(labels['testing'])
+    epn_emg = np.array(epn.emg, dtype='object')
+    epn_labels = np.array(epn.labels)
+    epn_subjects = np.array(epn.subject_ids)
 
-    training_subjects = np.array(epn_subjects['training'])
-    testing_subjects = np.array(epn_subjects['testing'])
-
-    emg_data_all: npt.NDArray[np.object_] = np.hstack([training_emg, testing_emg])
-    labels_all: npt.NDArray[Any] = np.hstack([training_labels, testing_labels])
-    subject_ids_all: npt.NDArray[Any] = np.hstack([training_subjects, testing_subjects])
-
-    n_subs = len(np.unique(subject_ids_all))
-    print(f"Loaded {len(emg_data_all)} gesture samples from EPN dataset across {n_subs} subjects.")
+    n_subs = len(np.unique(epn_subjects))
+    print(f"Loaded {len(epn_emg)} gesture samples from EPN dataset across {n_subs} subjects.")
     print(f"Loaded {len(adl_data)} ADL noise segments.")
 
-    return emg_data_all, labels_all, subject_ids_all, adl_data, adl_subjects
+    return RawData(
+        epn_emg=epn_emg,
+        epn_labels=epn_labels,
+        epn_subjects=epn_subjects,
+        adl_emg=adl_data,
+        adl_subjects=adl_subjects,
+    )
 
 
 def _parse_subject_id(val: Union[int, str, Any]) -> Optional[int]:
@@ -375,43 +393,24 @@ def extract_data(data: Dict[str, Any]) -> Tuple[Optional[npt.NDArray[Any]], Opti
     
 def load_epn_data(
     path: Path | str,
-    gesture_sets: List[str] = ['trainingSamples', 'testingSamples'],
-    subjects: List[int] = list(range(1, 307)), 
-    subject_types: List[str] = ['training', 'testing']
-) -> Tuple[Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[Any]], Dict[str, List[int]]]:
-    """Loads and organizes the EMG dataset from JSON files or a cached pickle.
-
-    Args:
-        path: path to the root of the dataset
-        gesture_sets: List of keys in the JSON to load samples from. Defaults to ['trainingSamples', 'testingSamples'].
-        subjects: List of subject IDs to load. Defaults to range(1, 307).
-        subject_types: List of directories ('training', 'testing') to search in. Defaults to ['training', 'testing'].
-
-    Returns:
-        Tuple of dictionaries for (emg_data, imu_data, labels, myo_labels, subject_ids), 
-        each keyed by the subject_types.
-    """
+    gesture_sets: Sequence[str] = ('trainingSamples', 'testingSamples'),
+    subjects: Sequence[int] = tuple(range(1, 307)),
+    subject_types: Sequence[str] = ('training', 'testing')
+) -> EPNData:
+    """Loads and collects the EMG dataset from JSON files or a cached pickle."""
     path = Path(path)
 
     # Check if pkl file exists (to save time)
     if os.path.exists('dataset.pkl') and len(subjects) > 300:
-        with open('dataset.pkl', 'rb') as f:
-            return tuple(pickle.load(f)) # type: ignore
+        try:
+            with open('dataset.pkl', 'rb') as f:
+                return pickle.load(f)
+        except Exception:
+            print("Failed to load from .pkl file.")
+            pass
 
-    emg_data: Dict[str, List[Any]] = {}
-    imu_data: Dict[str, List[Any]] = {}
-    labels: Dict[str, List[Any]] = {}
-    myo_labels: Dict[str, List[Any]] = {}
-    subject_ids: Dict[str, List[int]] = {}
-    
-    # Initialize dictionary:
-    for t in subject_types:
-        emg_data[t] = []  
-        imu_data[t] = []
-        labels[t] = []
-        myo_labels[t] = []
-        subject_ids[t] = []
-        
+    result = EPNData()
+
     for t in subject_types:
         print("Getting " + t + " subjects...")
         for sub in subjects:
@@ -424,20 +423,20 @@ def load_epn_data(
                 jd = json.load(f)
                 for s in gesture_sets:
                     for sample in jd[s]: 
-                        e,i,l,ml = extract_data(jd[s][sample])
+                        e, i, l, ml = extract_data(jd[s][sample])
                         if e is not None:
-                            emg_data[t].append(e)
-                            imu_data[t].append(i)
-                            labels[t].append(l)
-                            myo_labels[t].append(ml)
-                            subject_ids[t].append(sub)
+                            result.emg.append(e)
+                            result.imu.append(i)
+                            result.labels.append(l)
+                            result.myo_labels.append(ml)
+                            result.subject_ids.append(sub)
 
     # Save dataset as pkl (to save time)
     if len(subjects) > 300:
         with open('dataset.pkl', 'wb') as f:
-            pickle.dump([emg_data, imu_data, labels, myo_labels, subject_ids], f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    return emg_data, imu_data, labels, myo_labels, subject_ids
+    return result
 
 def load_disco_adls(
     path: Path | str,

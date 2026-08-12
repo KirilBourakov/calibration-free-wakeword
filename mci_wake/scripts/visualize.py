@@ -27,7 +27,7 @@ if str(SRC_DIR) not in sys.path:
 
 from mci_wake.stitching.hanning import stitch
 from mci_wake.utils.normalize import safe_znormalize_global
-from mci_wake.data.train_utils import load_epn_data, load_disco_adls, split_disco_adls, EPN_DATA, ADL_DATA, gesture_mapping
+from mci_wake.data.train_utils import load_epn_data, load_disco_adls, split_disco_adls, EPN_DATA, ADL_DATA, gesture_mapping, EPNData
 
 # Inverse gesture map
 GESTURE_NAMES = {v: k for k, v in gesture_mapping.items()}
@@ -65,9 +65,9 @@ def get_epn_data_cached():
         try:
             print(f"Loading EPN dataset from {pkl_path}...")
             with open(pkl_path, 'rb') as f:
-                emg_data, imu_data, labels, myo_labels, epn_subjects = pickle.load(f)
-            _EPN_CACHE = (emg_data, labels, epn_subjects)
-            print(f"Loaded EPN: {len(emg_data.get('training', []))} train, {len(emg_data.get('testing', []))} test samples.")
+                epn = pickle.load(f)
+            _EPN_CACHE = (epn.emg, epn.labels, epn.subject_ids)
+            print(f"Loaded EPN: {len(epn.emg)} samples.")
             return _EPN_CACHE
         except Exception as e:
             print(f"Warning: Failed to load dataset.pkl: {e}")
@@ -75,8 +75,8 @@ def get_epn_data_cached():
     # Fallback to load_epn_data loader
     try:
         print("Attempting to load raw EPN dataset...")
-        emg_data, imu_data, labels, myo_labels, epn_subjects = load_epn_data(EPN_DATA)
-        _EPN_CACHE = (emg_data, labels, epn_subjects)
+        epn = load_epn_data(EPN_DATA)
+        _EPN_CACHE = (epn.emg, epn.labels, epn.subject_ids)
         return _EPN_CACHE
     except Exception as e:
         print(f"Notice: EPN dataset not available on disk ({e}). Using synthetic EPN data.")
