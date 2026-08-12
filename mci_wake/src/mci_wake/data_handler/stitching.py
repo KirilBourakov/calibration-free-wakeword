@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
+from mci_wake.data_handler.types import RecordingTriggers, TriggerStats
 from mci_wake.stitching.hanning import stitch
 from mci_wake.data.train_utils import gesture_mapping
 
@@ -61,7 +62,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         self.reset_idx = 0
 
         self.target_regions: list[TargetRegion] = []
-        self.triggers: list[dict[str, Any]] = []
+        self.triggers: list[RecordingTriggers] = []
 
         self._stitch_more_data()
 
@@ -149,25 +150,28 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 is_fp = False
                 region.status = "detected"
 
-        self.triggers.append({
-            "sample_idx": current_idx,
-            "timestamp": self.get_time(),
-            "is_false_positive": is_fp,
-        })
+        self.triggers.append(
+            RecordingTriggers(
+                index=current_idx,
+                timestamp=self.get_time(),
+                is_fp=is_fp,
+            )
+        )
 
-    def get_trigger_stats(self, tolerance=0.5) -> dict[str, Any]:
+    def get_trigger_stats(self, tolerance: float = 0.5) -> TriggerStats:
         self._check_false_negatives(tolerance=tolerance)
         tp = sum(1 for r in self.target_regions if r.status == "detected")
-        fp = sum(1 for t in self.triggers if t["is_false_positive"])
+        fp = sum(1 for t in self.triggers if t.is_fp)
         fn = sum(1 for r in self.target_regions if r.status == "missed")
-        return {
-            "true_positives": tp,
-            "false_positives": fp,
-            "false_negatives": fn,
-            "total_triggers": len(self.triggers),
-            "target_regions_count": len(self.target_regions),
-            "triggers": self.triggers,
-        }
+        return TriggerStats(
+            true_positives=tp,
+            false_positives=fp,
+            false_negatives=fn,
+            total_triggers=len(self.triggers),
+            target_regions_count=len(self.target_regions),
+            triggers=self.triggers,
+        )
+
 
     def _check_false_negatives(self, tolerance=0.5) -> None:
         current_idx = self.end_idx

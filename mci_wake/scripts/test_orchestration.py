@@ -20,18 +20,6 @@ def get_models() -> tuple[DiscreteClassifier, ...]:
     )
     return model1.internals, model2.internals
 
-
-def print_stats(handler: StitchingDataHandler):
-    stats = handler.get_trigger_stats()
-    print("\n=== [Trigger Stats] ===")
-    print(f"True Positives:  {stats['true_positives']}")
-    print(f"False Positives: {stats['false_positives']}")
-    print(f"False Negatives: {stats['false_negatives']}")
-    print(f"Total Triggers:  {stats['total_triggers']}")
-    # print(f"Target Regions:  {stats['target_regions_count']}")
-    print("=======================\n")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Test wake word orchestration.")
     parser.add_argument("--realtime", action="store_true", help="Run in real-time wall-clock mode.")
@@ -62,7 +50,7 @@ def main():
         def print_stats_periodically():
             while True:
                 time.sleep(30.0)
-                print_stats(handler)
+                print(handler.get_trigger_stats())
 
         stats_thread = threading.Thread(target=print_stats_periodically, daemon=True)
         stats_thread.start()
@@ -76,7 +64,7 @@ def main():
         discrete.run(duration_sec=args.duration)
         elapsed = time.time() - start_t
         print(f"Simulation completed in {elapsed:.2f} seconds wall-clock time!")
-        print_stats(handler)
+        print(handler.get_trigger_stats())
 
 
 if __name__ == "__main__":

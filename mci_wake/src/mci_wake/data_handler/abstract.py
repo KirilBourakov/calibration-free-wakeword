@@ -4,6 +4,8 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
+from mci_wake.data_handler.types import TriggerStats
+
 
 class AbstractDataHandler(ABC):
     """
@@ -57,6 +59,11 @@ class OfflineCapableAbstractDataHandler(AbstractDataHandler, ABC):
     @abstractmethod
     def advance(self, samples: int) -> None:
         """Advance the simulation/playback state by a given number of samples (non-realtime mode)."""
+        ...
+
+    @abstractmethod
+    def get_trigger_stats(self, tolerance: float = 0.5) -> TriggerStats:
+        """Get trigger statistics for the offline data handler."""
         ...
 
     @property

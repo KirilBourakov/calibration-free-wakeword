@@ -7,6 +7,7 @@ from pydantic import BeforeValidator, ConfigDict, PlainSerializer, TypeAdapter
 from pydantic.dataclasses import dataclass
 
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
+from mci_wake.data_handler.types import RecordingTriggers, TriggerStats
 
 
 def _validate_ndarray(v: Any) -> npt.NDArray[np.float64]:
@@ -31,11 +32,6 @@ class RecordingFileRegions:
     start: float
     end: float
 
-@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
-class RecordingTriggers:
-    index: float
-    timestamp: float
-    is_fp: bool
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class RecordingFileContents:
@@ -108,14 +104,15 @@ class RecordingDataHandler(OfflineCapableAbstractDataHandler):
             is_fp=is_fp,
         ))
 
-    def get_trigger_stats(self) -> dict[str, Any]:
+    def get_trigger_stats(self, tolerance: float = 0.5) -> TriggerStats:
         tp = sum(1 for r in self.triggers if not r.is_fp)
         fp = sum(1 for r in self.triggers if r.is_fp)
         fn = sum(1 for r in self.detected if not r)
-        return {
-            "true_positives": tp,
-            "false_positives": fp,
-            "false_negatives": fn,
-            "total_triggers": len(self.triggers),
-            "triggers": self.triggers,
-        }
+        return TriggerStats(
+            true_positives=tp,
+            false_positives=fp,
+            false_negatives=fn,
+            total_triggers=len(self.triggers),
+            target_regions_count=len(self.recording.regions),
+            triggers=self.triggers,
+        )
