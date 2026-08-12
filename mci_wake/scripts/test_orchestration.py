@@ -3,7 +3,7 @@ import argparse
 import threading
 import torch
 
-from mci_wake.data.train_utils import filter_training, load_raw_data
+from mci_wake.data import filter_training, load_raw_data
 from mci_wake.data_handler import RecordingDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
 from mci_wake.neural.lightning_module import DiscreteLightningModule

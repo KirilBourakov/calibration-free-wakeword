@@ -1,12 +1,7 @@
 import numpy as np
 
-from mci_wake.data.train_utils import (
-    gesture_mapping,
-    load_raw_data,
-    preprocess_nm_data,
-    train_model,
-    prepare_loso_datasets,
-)
+from mci_wake.data import gesture_mapping, load_raw_data, preprocess_nm_data, prepare_loso_datasets
+from mci_wake.neural.training import train_model
 from mci_wake.neural.classifier import DiscreteClassifierConfig
 
 # Target gesture to recognize. Everything else will be classified as 'other' (0).

@@ -27,7 +27,9 @@ if str(SRC_DIR) not in sys.path:
 
 from mci_wake.stitching.hanning import stitch
 from mci_wake.utils.normalize import safe_znormalize_global
-from mci_wake.data.train_utils import load_epn_data, load_disco_adls, split_disco_adls, EPN_DATA, ADL_DATA, gesture_mapping, EPNData
+from mci_wake.data.loaders import load_disco_adls, split_disco_adls
+from mci_wake.data.types import EPN_DATA, ADL_DATA
+from mci_wake.data import EPNData, gesture_mapping, load_epn_data
 
 # Inverse gesture map
 GESTURE_NAMES = {v: k for k, v in gesture_mapping.items()}

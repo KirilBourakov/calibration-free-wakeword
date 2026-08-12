@@ -1,16 +1,7 @@
-from mci_wake.data.train_utils import (
-    filter_training,
-    gesture_mapping,
-    load_epn_data,
-    load_raw_data,
-    preprocess_nm_data,
-    prepare_datasets,
-    prepare_loso_datasets,
-    train_model,
-    TrainData,
-    EPNData,
-    RawData,
-)
+from mci_wake.neural.classifier import TrainData
+from mci_wake.data.loaders import load_raw_data, load_epn_data
+from mci_wake.data.processing import filter_training, preprocess_nm_data, prepare_datasets, prepare_loso_datasets
+from mci_wake.data.types import EPNData, RawData, gesture_mapping
 
 __all__ = [
     "filter_training",
@@ -20,7 +11,6 @@ __all__ = [
     "preprocess_nm_data",
     "prepare_datasets",
     "prepare_loso_datasets",
-    "train_model",
     "TrainData",
     "EPNData",
     "RawData",

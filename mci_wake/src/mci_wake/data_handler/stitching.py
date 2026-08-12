@@ -8,7 +8,7 @@ import numpy.typing as npt
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
 from mci_wake.stitching.hanning import stitch
-from mci_wake.data.train_utils import gesture_mapping
+from mci_wake.data import gesture_mapping
 
 
 @dataclass

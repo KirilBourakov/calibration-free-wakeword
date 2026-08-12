@@ -16,7 +16,7 @@ SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from mci_wake.data.train_utils import load_raw_data, gesture_mapping
+from mci_wake.data import gesture_mapping, load_raw_data
 from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
 from mci_wake.neural.io import load
 from mci_wake.data_handler.stitching import StitchingDataHandler
