@@ -36,15 +36,15 @@ def main():
 
     gestures = ["pinch", "fist"]
     realtime = args.realtime
-    # handler = StitchingDataHandler(
-    #     emg_data=emg_data_all,
-    #     emg_labels=labels_all,
-    #     adl_data=adl_data,
-    #     gestures=gestures,
-    #     probabilities=(0.4, 0.4, 0.2),
-    #     realtime=realtime,
-    # )
-    handler = RecordingDataHandler(path=r"D:\Coding\calibration-free-wakeword\mci_wake\recordings\pinchfirst\shake1.json")
+    handler = StitchingDataHandler(
+        emg_data=emg_data_all,
+        emg_labels=labels_all,
+        adl_data=adl_data,
+        gestures=gestures,
+        probabilities=(0.4, 0.4, 0.2),
+        realtime=realtime,
+    )
+    # handler = RecordingDataHandler(path=r"D:\Coding\calibration-free-wakeword\mci_wake\recordings\pinchfirst\shake1.json")
 
     if realtime:
         def print_stats_periodically():
@@ -61,7 +61,7 @@ def main():
         print(f"Running fast simulation for {args.duration} simulated seconds...")
         start_t = time.time()
         discrete = WakeDetect(handler, 10, 5, list(models), normalize=False, verbose=False)
-        discrete.run(duration_sec=10000)
+        discrete.run(duration_sec=args.duration)
         elapsed = time.time() - start_t
         print(f"Simulation completed in {elapsed:.2f} seconds wall-clock time!")
         print(handler.get_trigger_stats())

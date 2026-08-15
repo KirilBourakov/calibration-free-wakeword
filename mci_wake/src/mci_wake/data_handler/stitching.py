@@ -7,7 +7,7 @@ import numpy.typing as npt
 
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
-from mci_wake.stitching.hanning import stitch
+from mci_wake.stitching.hanning import stitch, stitch_into_buffer
 from mci_wake.data import gesture_mapping
 
 
@@ -33,18 +33,22 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         probabilities: tuple[float, float, float] = (0.5, 0.5, 0.0),
         realtime: bool = True,
         step_samples: int = 5,
+        overlap_samples: int = 15,
+        initial_capacity: int = 65536,
     ):
         assert len(probabilities) == 3, "probabilities must be a tuple of 3 floats"
         assert abs(sum(probabilities) - 1.0) < 1e-5, "probabilities must sum to 1.0"
 
-        self.emg_data = emg_data
+        # Pre-convert datasets to float64 ndarrays to avoid repeated conversions during streaming
+        self.emg_data = [np.asarray(d, dtype=np.float64) for d in emg_data]
         self.emg_labels = emg_labels
-        self.adl_data = adl_data
+        self.adl_data = [np.asarray(d, dtype=np.float64) for d in adl_data]
         self.sampling_rate = sampling_rate
         self.probabilities = probabilities
         self.gestures = gestures
         self.realtime = realtime
         self.step_samples = step_samples
+        self.overlap_samples = overlap_samples
 
         self.gesture_sequence = [
             gesture_mapping[g] if isinstance(g, str) and g in gesture_mapping else int(g)
@@ -57,7 +61,11 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             self._label_indices.setdefault(label, []).append(idx)
 
         self.start_time: float | None = None
-        self.buffer: npt.NDArray[np.floating] = np.zeros((0, 8), dtype=np.float64)
+
+        # Dynamic capacity buffer to avoid quadratic reallocations
+        n_channels = 8
+        self._buffer: npt.NDArray[np.float64] = np.empty((initial_capacity, n_channels), dtype=np.float64)
+        self._buffer_len: int = 0
         self.end_idx = 0
         self.reset_idx = 0
 
@@ -65,6 +73,15 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         self.triggers: list[RecordingTriggers] = []
 
         self._stitch_more_data()
+
+    @property
+    def buffer(self) -> npt.NDArray[np.floating]:
+        return self._buffer[:self._buffer_len]
+
+    @buffer.setter
+    def buffer(self, val: npt.NDArray[np.floating]) -> None:
+        self._buffer = np.asarray(val, dtype=np.float64)
+        self._buffer_len = len(self._buffer)
 
     def get_time(self) -> float:
         if self.realtime:
@@ -86,10 +103,10 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             elapsed = time.time() - self.start_time
             self.end_idx = int(elapsed * self.sampling_rate)
 
-        while self.end_idx >= len(self.buffer):
-            prev_len = len(self.buffer)
+        while self.end_idx >= self._buffer_len:
+            prev_len = self._buffer_len
             self._stitch_more_data()
-            if len(self.buffer) <= prev_len:
+            if self._buffer_len <= prev_len:
                 break
 
         self._check_false_negatives()
@@ -106,7 +123,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         target_len = N if N > 0 else samples_since_reset
         start_idx = max(0, self.end_idx - target_len)
 
-        data = self.buffer[start_idx:self.end_idx, :][::-1]
+        data = self._buffer[start_idx:self.end_idx, :][::-1]
         return DataHandlerOutput(emg=data, count=samples_since_reset)
 
     def reset(self, modality: str | None = None) -> None:
@@ -118,10 +135,8 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
     def on_wake_detected(self, tolerance=0.5) -> None:
         """
-        Called by an orchestrator (e.g. WakeDetect) when a wake detection occurs.
-        Tracks true vs. false positives internally.
-        A trigger is a true positive if it occurs while being served a positive test case,
-        or up to [tolerance] seconds after being served a positive test case.
+        Called by an orchestrator when a wake detection occurs. Tracks true vs. false positives internally.
+        A trigger is a true positive if it occurs while being served a positive test case, or up to [tolerance] seconds.
         """
         self.update()
         current_idx = self.end_idx
@@ -155,8 +170,8 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             triggers=self.triggers,
         )
 
-
     def _check_false_negatives(self, tolerance=0.5) -> None:
+        """Mark every passed pending region as missed."""
         current_idx = self.end_idx
         tolerance_samples = int(tolerance * self.sampling_rate)
 
@@ -165,25 +180,27 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 region.status = "missed"
 
     def _stitch_more_data(self) -> None:
-        start_len = len(self.buffer)
+        """Add more data to buffer."""
+        start_len = self._buffer_len
         new_segments, is_test_case = self._get_next_segments()
         if not new_segments:
             return
 
-        if len(self.buffer) == 0:
-            if len(new_segments) == 1:
-                self.buffer = new_segments[0].copy()
-            else:
-                self.buffer = stitch(new_segments)
-        else:
-            self.buffer = stitch([self.buffer] + new_segments, in_place=True)
+        self._ensure_capacity(sum(len(s) for s in new_segments))
+        for seg in new_segments:
+            self._buffer_len = stitch_into_buffer(
+                self._buffer,
+                self._buffer_len,
+                seg,
+                overlap_samples=self.overlap_samples,
+            )
 
         if is_test_case:
-            end_len = len(self.buffer)
+            end_len = self._buffer_len
             self.target_regions.append(TargetRegion(start=start_len, end=end_len))
 
-
     def _get_next_segments(self) -> tuple[list[npt.NDArray[np.floating]], bool]:
+        """Get the next set of segments."""
         p_adl, p_emg, _ = self.probabilities
         segments: list[npt.NDArray[np.floating]] = []
         r = random.random()
@@ -192,7 +209,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         if r < p_adl:
             # empty adl data
             idx = random.randint(0, len(self.adl_data) - 1)
-            segments.append(np.asarray(self.adl_data[idx], dtype=np.float64))
+            segments.append(self.adl_data[idx])
         elif r < p_adl + p_emg:
             # some random movement
             if len(self.gesture_sequence) == 1:
@@ -202,13 +219,13 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 ]
                 if matching:
                     idx = random.choice(matching)
-                    segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+                    segments.append(self.emg_data[idx])
             else:
                 idx = random.randint(0, len(self.emg_data) - 1)
-                segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+                segments.append(self.emg_data[idx])
                 if len(self.gesture_sequence) > 1:
                     idx_adl = random.randint(0, len(self.adl_data) - 1)
-                    segments.append(np.asarray(self.adl_data[idx_adl], dtype=np.float64))
+                    segments.append(self.adl_data[idx_adl])
 
         else:
             # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-1.25s no-gesture gaps
@@ -222,7 +239,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 matching = self._label_indices.get(g_id, [])
                 assert matching, f"No EMG data found matching gesture {g_id}"
                 idx = random.choice(matching)
-                segments.append(np.asarray(self.emg_data[idx], dtype=np.float64))
+                segments.append(self.emg_data[idx])
 
                 if i < len(self.gesture_sequence) - 1:
                     no_g_seg = self._get_no_gesture_segment(max_duration_sec=1.25)
@@ -230,6 +247,16 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                         segments.append(no_g_seg)
 
         return segments, is_test_case
+
+    def _ensure_capacity(self, needed_additional_samples: int) -> None:
+        """Make sure the buffer has at least the needed_additional_samples free"""
+        required = self._buffer_len + needed_additional_samples
+        if required > len(self._buffer):
+            new_capacity = max(len(self._buffer) * 2, required)
+            new_buffer = np.empty((new_capacity, self._buffer.shape[1]), dtype=np.float64)
+            if self._buffer_len > 0:
+                new_buffer[:self._buffer_len] = self._buffer[:self._buffer_len]
+            self._buffer = new_buffer
 
     def _get_no_gesture_segment(self, max_duration_sec: float = 1.25) -> npt.NDArray[np.floating] | None:
         max_samples = int(max_duration_sec * self.sampling_rate)
@@ -242,7 +269,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         # Try noGesture (label 0) in emg_data
         matching = self._label_indices.get(0, [])
         assert matching, "Cannot _get_no_gesture_segment: matching is empty"
-        rec = np.asarray(self.emg_data[random.choice(matching)], dtype=np.float64)
+        rec = self.emg_data[random.choice(matching)]
         if len(rec) >= num_samples:
             start_i = random.randint(0, len(rec) - num_samples)
             return rec[start_i : start_i + num_samples]
