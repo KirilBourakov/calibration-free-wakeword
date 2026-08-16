@@ -77,10 +77,12 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
     @property
     def buffer(self) -> npt.NDArray[np.floating]:
+        """Get the valid portion of the EMG buffer."""
         return self._buffer[:self._buffer_len]
 
     @buffer.setter
     def buffer(self, val: npt.NDArray[np.floating]) -> None:
+        """Set the EMG buffer and update its length."""
         self._buffer = np.asarray(val, dtype=np.float64)
         self._buffer_len = len(self._buffer)
 
@@ -99,7 +101,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
     def pregenerate(self, seconds: float) -> None:
         """
-        Pre-generate data into the buffer for the specified duration
+        Pre-generate and stitch data into the buffer for the specified duration (in seconds).
         """
         target_samples = int(seconds * self.sampling_rate)
         target_len = self._buffer_len + target_samples
@@ -109,8 +111,8 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             if self._buffer_len <= prev_len:
                 break
 
-
     def update(self) -> int:
+        """Update the stream position and stitch additional data into the buffer if needed."""
         if self.realtime:
             if self.start_time is None:
                 self.start_time = time.time()
@@ -256,7 +258,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 segments.append(self.emg_data[idx])
 
                 if i < len(self.gesture_sequence) - 1:
-                    no_g_seg = self._get_no_gesture_segment(max_duration_sec=1.25)
+                    no_g_seg = self._get_no_gesture_segment(max_duration_sec=0.75)
                     if no_g_seg is not None and len(no_g_seg) > 0:
                         segments.append(no_g_seg)
 
@@ -273,6 +275,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             self._buffer = new_buffer
 
     def _get_no_gesture_segment(self, max_duration_sec: float = 1.25) -> npt.NDArray[np.floating] | None:
+        """Extract a random slice of rest/no-gesture EMG data up to max_duration_sec."""
         max_samples = int(max_duration_sec * self.sampling_rate)
         if max_samples <= 0:
             return None
@@ -294,3 +297,4 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         ret = "=== STITCHING HANDLER INFORMATION ===\n"
         ret += str(pd.Series(stitching_regions).describe())
         return ret
+
