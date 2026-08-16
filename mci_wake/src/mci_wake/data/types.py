@@ -31,6 +31,37 @@ class RawData:
     def __iter__(self):
         return iter((self.epn_emg, self.epn_labels, self.epn_subjects, self.adl_emg, self.adl_subjects))
 
+    def split(self, test_percentage: float) -> tuple["RawData", "RawData"]:
+        unique_subjects = np.unique(self.epn_subjects)
+
+        n_test = int(len(unique_subjects) * test_percentage)
+        test_subject_ids = list(unique_subjects[:n_test])
+
+        epn_test_mask = np.isin(self.epn_subjects, test_subject_ids)
+        epn_train_mask = ~epn_test_mask
+
+        unique_subjects = np.unique(self.adl_subjects)
+        n_test = int(len(unique_subjects) * test_percentage)
+        test_subject_ids = list(unique_subjects[:n_test])
+        adl_test_mask = np.isin(self.adl_subjects, test_subject_ids)
+        adl_train_mask = ~adl_test_mask
+
+        test = RawData(
+            epn_emg=self.epn_emg[epn_test_mask],
+            epn_labels=self.epn_labels[epn_test_mask],
+            epn_subjects=self.epn_subjects[epn_test_mask],
+            adl_emg=self.adl_emg[adl_test_mask],
+            adl_subjects=self.adl_subjects[adl_test_mask]
+        )
+        train = RawData(
+            epn_emg=self.epn_emg[epn_train_mask],
+            epn_labels=self.epn_labels[epn_train_mask],
+            epn_subjects=self.epn_subjects[epn_train_mask],
+            adl_emg=self.adl_emg[adl_train_mask],
+            adl_subjects=self.adl_subjects[adl_train_mask]
+        )
+        return train, test
+
 
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
 
