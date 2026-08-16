@@ -4,6 +4,7 @@ from typing import Any
 import time
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
@@ -95,6 +96,19 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
     def advance(self, samples: int) -> None:
         self.end_idx += samples
         self.update()
+
+    def pregenerate(self, seconds: float) -> None:
+        """
+        Pre-generate data into the buffer for the specified duration
+        """
+        target_samples = int(seconds * self.sampling_rate)
+        target_len = self._buffer_len + target_samples
+        while self._buffer_len < target_len:
+            prev_len = self._buffer_len
+            self._stitch_more_data()
+            if self._buffer_len <= prev_len:
+                break
+
 
     def update(self) -> int:
         if self.realtime:
@@ -278,5 +292,5 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
     def __str__(self) -> str:
         stitching_regions = [(r.end - r.start) / self.sampling_rate for r in self.target_regions] if self.target_regions else []
         ret = "=== STITCHING HANDLER INFORMATION ===\n"
-        ret += pd.Series(stitching_regions).describe()
+        ret += str(pd.Series(stitching_regions).describe())
         return ret
