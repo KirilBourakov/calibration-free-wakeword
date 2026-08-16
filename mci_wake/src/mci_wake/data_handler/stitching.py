@@ -275,3 +275,8 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             return rec[start_i : start_i + num_samples]
         return rec[:num_samples]
 
+    def __str__(self) -> str:
+        stitching_regions = [(r.end - r.start) / self.sampling_rate for r in self.target_regions] if self.target_regions else []
+        ret = "=== STITCHING HANDLER INFORMATION ===\n"
+        ret += pd.Series(stitching_regions).describe()
+        return ret
