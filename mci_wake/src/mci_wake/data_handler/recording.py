@@ -6,26 +6,9 @@ from numpy import typing as npt
 from pydantic import BeforeValidator, ConfigDict, PlainSerializer, TypeAdapter
 from pydantic.dataclasses import dataclass
 
+from mci_wake.data.types import PydanticF64Array
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
-
-
-
-def _validate_ndarray(v: Any) -> npt.NDArray[np.float64]:
-    if isinstance(v, np.ndarray):
-        return v.astype(np.float64)
-    return np.array(v if v is not None else [], dtype=np.float64)
-
-
-def _serialize_ndarray(v: npt.NDArray[np.float64]) -> list:
-    return v.tolist()
-
-
-PyArray = Annotated[
-    npt.NDArray[np.float64],
-    BeforeValidator(_validate_ndarray),
-    PlainSerializer(_serialize_ndarray, return_type=list),
-]
 
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
@@ -36,8 +19,8 @@ class RecordingFileRegions:
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class RecordingFileContents:
-    emg: PyArray
-    timestamps: PyArray
+    emg: PydanticF64Array
+    timestamps: PydanticF64Array
     regions: list[RecordingFileRegions]
 
 
@@ -116,4 +99,4 @@ class RecordingDataHandler(OfflineCapableAbstractDataHandler):
             total_triggers=len(self.triggers),
             target_regions_count=len(self.recording.regions),
             triggers=self.triggers,
-        )
+        )

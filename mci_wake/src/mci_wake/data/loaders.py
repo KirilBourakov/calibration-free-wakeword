@@ -9,7 +9,7 @@ from typing import Dict, Any, Tuple, Optional, Sequence
 import numpy as np
 from numpy import typing as npt
 
-from mci_wake.data.types import RawData, gesture_mapping, EPNData, ADL_DATA, EPN_DATA
+from mci_wake.data.types import EmgData, RawData, gesture_mapping, EPNData, ADL_DATA, EPN_DATA
 
 
 def load_raw_data(presplit_adl=True) -> RawData:
@@ -17,6 +17,8 @@ def load_raw_data(presplit_adl=True) -> RawData:
     adl_data, adl_subjects = load_disco_adls(ADL_DATA)
     if presplit_adl:
         adl_data, adl_subjects = split_disco_adls(adl_data, adl_subjects)
+    else:
+        adl_data = np.array(adl_data, dtype='object')
 
     epn = load_epn_data(EPN_DATA)
 
@@ -114,7 +116,7 @@ def load_epn_data(
                     for sample in jd[s]:
                         e, i, l, ml = extract_data(jd[s][sample])
                         if e is not None:
-                            result.emg.append(e)
+                            result.emg.append(EmgData(data=e, is_normalized=False))
                             result.imu.append(i)
                             result.labels.append(l)
                             result.myo_labels.append(ml)
@@ -131,14 +133,14 @@ def load_epn_data(
 def load_disco_adls(
     path: Path | str,
     min_len: int = 150
-) -> tuple[list[npt.NDArray[np.float64]], npt.NDArray[np.int_]]:
+) -> tuple[list[EmgData], npt.NDArray[np.int_]]:
     """Loads raw ADL dataset from disk, trims EMG channels, and tracks subject IDs.
 
     Args:
         path: Path to the ADL dataset root directory.
         min_len: Minimum number of rows required to keep a recording.
     Returns:
-        tuple: (recordings, subject_ids) where `recordings` is a list of 2D EMG arrays
+        tuple: (recordings, subject_ids) where `recordings` is a list of EmgData instances
                and `subject_ids` is a parallel integer array of the subject ID (1-15) for each recording.
     """
     path = Path(path)
@@ -157,7 +159,7 @@ def load_disco_adls(
             # Guard against 1D arrays and filter out short recordings early
             if data.ndim == 2 and len(data) >= min_len:
                 # Keep only the last 8 EMG channels
-                recordings.append(data[:, -8:])
+                recordings.append(EmgData(data=data[:, -8:], is_normalized=False))
                 subject_ids.append(s)
             else:
                 print(f"WARNING: skipping invalid or too short recording for user {s} ({file_path.name})")
@@ -166,7 +168,7 @@ def load_disco_adls(
 
 
 def split_disco_adls(
-    recordings: Sequence[npt.NDArray[np.float64]],
+    recordings: Sequence[EmgData] | Sequence[npt.NDArray[np.float64]],
     subject_ids: npt.NDArray[np.int_],
     window: tuple[int, int] = (150, 400),
     step: int = 50
@@ -174,18 +176,19 @@ def split_disco_adls(
     """Windows continuous EMG recordings into randomized segments while preserving subject IDs.
 
     Args:
-        recordings: Sequence of 2D arrays containing continuous EMG data.
+        recordings: Sequence of EmgData instances or 2D arrays containing continuous EMG data.
         subject_ids: Parallel array of subject IDs corresponding to each recording.
         window: Tuple of (min_window, max_window) specifying slice lengths.
         step: Step size (stride) between the start of consecutive windows.
     Returns:
-        tuple: (windows, window_subject_ids) as parallel arrays of segmented data and subject labels.
+        tuple: (windows, window_subject_ids) as parallel arrays of segmented EmgData and subject labels.
     """
     min_window, max_window = window
     windows = []
     window_subject_ids = []
 
-    for data, s in zip(recordings, subject_ids):
+    for item, s in zip(recordings, subject_ids):
+        data = item.data if isinstance(item, EmgData) else item
         # Secondary safety check in case data is passed directly to the splitter
         if len(data) < min_window:
             continue
@@ -194,7 +197,7 @@ def split_disco_adls(
             max_possible_len = min(max_window, len(data) - i)
             win_len = random.randint(min_window, max_possible_len)
 
-            windows.append(data[i : i + win_len])
+            windows.append(EmgData(data=data[i : i + win_len], is_normalized=False))
             window_subject_ids.append(s)
 
     return np.array(windows, dtype='object'), np.array(window_subject_ids, dtype=int)

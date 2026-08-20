@@ -1,16 +1,37 @@
 import os
-from typing import List, Any, Dict
+from typing import List, Any, Dict, Annotated
 
 import numpy as np
 from numpy import typing as npt
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, BeforeValidator, PlainSerializer
 from pydantic.dataclasses import dataclass
 
+def _validate_ndarray(v: Any) -> npt.NDArray[np.float64]:
+    if isinstance(v, np.ndarray):
+        return v.astype(np.float64)
+    return np.array(v if v is not None else [], dtype=np.float64)
+
+
+def _serialize_ndarray(v: npt.NDArray[np.float64]) -> list:
+    return v.tolist()
+
+
+PydanticF64Array = Annotated[
+    npt.NDArray[np.float64],
+    BeforeValidator(_validate_ndarray),
+    PlainSerializer(_serialize_ndarray, return_type=list),
+]
+
+
+@dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
+class EmgData:
+    data: npt.NDArray[np.floating]
+    is_normalized: bool = False
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class EPNData:
-    emg: List[Any] = Field(default_factory=list)
+    emg: List[EmgData] = Field(default_factory=list)
     imu: List[Any] = Field(default_factory=list)
     labels: List[Any] = Field(default_factory=list)
     myo_labels: List[Any] = Field(default_factory=list)
@@ -22,10 +43,10 @@ class EPNData:
 
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True))
 class RawData:
-    epn_emg: npt.NDArray[np.object_]
+    epn_emg: npt.NDArray[EmgData]
     epn_labels: npt.NDArray[Any]
     epn_subjects: npt.NDArray[Any]
-    adl_emg: npt.NDArray[np.object_]
+    adl_emg: npt.NDArray[EmgData]
     adl_subjects: npt.NDArray[np.int_]
 
     def __iter__(self):

@@ -1,11 +1,13 @@
 import numpy as np
 import numpy.typing as npt
 
+from mci_wake.data.types import EmgData
+
 
 def stitch_into_buffer(
     buffer: npt.NDArray[np.floating],
     buffer_len: int,
-    segment: npt.NDArray[np.floating],
+    segment: EmgData,
     overlap_samples: int = 15,
 ) -> int:
     """
@@ -15,13 +17,15 @@ def stitch_into_buffer(
     Args:
         buffer: Destination buffer array with sufficient capacity.
         buffer_len: Current number of valid samples in the buffer.
-        segment: New segment to stitch.
+        segment: New segment to stitch.  Must be normalized.
         overlap_samples: Maximum number of overlap samples for cross-fading.
 
     Returns:
         New buffer length after stitching.
     """
-    seg_len = len(segment)
+    assert segment.is_normalized
+
+    seg_len = len(segment.data)
     if buffer_len == 0:
         buffer[:seg_len] = segment
         return seg_len
@@ -47,7 +51,7 @@ def stitch_into_buffer(
 
 
 def stitch(
-    data: list[npt.NDArray[np.floating]],
+    data: list[EmgData],
     overlap_samples: int = 15,
 ) -> npt.NDArray[np.floating]:
     """
@@ -55,7 +59,7 @@ def stitch(
     using a constant-power (raised-cosine / Hanning) cross-fade.
 
     Args:
-        data: List of npt.NDArray[np.floating] of shape (T, 8) to be stitched.
+        data: List of npt.NDArray[np.floating] of shape (T, 8) to be stitched. Must be normalized
         overlap_samples: Number of timesteps to cross-fade across the boundary.
                          Defaults to 15 samples (75 ms at a 200 Hz sampling rate).
 
@@ -64,11 +68,11 @@ def stitch(
     """
     assert data, "No data provided to stitch"
 
-    total_len = len(data[0])
+    total_len = len(data[0].data)
     for arr in data[1:]:
-        overlap = min(total_len, len(arr), overlap_samples)
+        overlap = min(total_len, len(arr.data), overlap_samples)
         assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, result: {total_len}, next_arr: {len(arr)}"
-        total_len += len(arr) - overlap
+        total_len += len(arr.data) - overlap
 
     shape = (total_len,) + data[0].shape[1:]
     result = np.empty(shape, dtype=data[0].dtype)
