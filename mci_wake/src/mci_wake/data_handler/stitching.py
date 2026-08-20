@@ -249,7 +249,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             # Inserts [empty] [gesture 1] [empty] [gesture 2] ... [gesture n]
             is_test_case = True
             leading_no_g = self._get_no_gesture_segment(max_duration_sec=0.25)
-            if leading_no_g is not None and len(leading_no_g) > 0:
+            if leading_no_g is not None and len(leading_no_g.data) > 0:
                 segments.append(leading_no_g)
 
             for i, g_id in enumerate(self.gesture_sequence):
@@ -260,7 +260,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
                 if i < len(self.gesture_sequence) - 1:
                     no_g_seg = self._get_no_gesture_segment(max_duration_sec=0.75)
-                    if no_g_seg is not None and len(no_g_seg) > 0:
+                    if no_g_seg is not None and len(no_g_seg.data) > 0:
                         segments.append(no_g_seg)
 
         return segments, is_test_case

@@ -27,14 +27,14 @@ def stitch_into_buffer(
 
     seg_len = len(segment.data)
     if buffer_len == 0:
-        buffer[:seg_len] = segment
+        buffer[:seg_len] = segment.data
         return seg_len
 
     overlap = min(buffer_len, seg_len, overlap_samples)
     assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, buffer_len: {buffer_len}, seg_len: {seg_len}"
 
     theta = np.linspace(0, np.pi / 2, overlap)
-    if segment.ndim > 1:
+    if segment.data.ndim > 1:
         w_out = (np.cos(theta) ** 2)[:, None]
         w_in = (np.sin(theta) ** 2)[:, None]
     else:
@@ -42,11 +42,11 @@ def stitch_into_buffer(
         w_in = np.sin(theta) ** 2
 
     seam_out = buffer[buffer_len - overlap : buffer_len]
-    seam_in = segment[:overlap]
+    seam_in = segment.data[:overlap]
     buffer[buffer_len - overlap : buffer_len] = (seam_out * w_out) + (seam_in * w_in)
 
     rem_len = seg_len - overlap
-    buffer[buffer_len : buffer_len + rem_len] = segment[overlap:]
+    buffer[buffer_len : buffer_len + rem_len] = segment.data[overlap:]
     return buffer_len + rem_len
 
 
@@ -71,11 +71,11 @@ def stitch(
     total_len = len(data[0].data)
     for arr in data[1:]:
         overlap = min(total_len, len(arr.data), overlap_samples)
-        assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, result: {total_len}, next_arr: {len(arr)}"
+        assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, result: {total_len}, next_arr: {len(arr.data)}"
         total_len += len(arr.data) - overlap
 
-    shape = (total_len,) + data[0].shape[1:]
-    result = np.empty(shape, dtype=data[0].dtype)
+    shape = (total_len,) + data[0].data.shape[1:]
+    result = np.empty(shape, dtype=data[0].data.dtype)
 
     curr_len = 0
     for arr in data:
