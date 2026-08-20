@@ -26,9 +26,9 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from mci_wake.stitching.hanning import stitch
-from mci_wake.utils.normalize import safe_znormalize_global
+from mci_wake.data.normalization import Normalize
 from mci_wake.data.loaders import load_disco_adls, split_disco_adls
-from mci_wake.data.types import EPN_DATA, ADL_DATA
+from mci_wake.data.types import EPN_DATA, ADL_DATA, EmgData
 from mci_wake.data import EPNData, gesture_mapping, load_epn_data
 
 # Inverse gesture map
@@ -650,12 +650,17 @@ def update_epn_view(split, sample_idx, norm_chk, selected_channels):
         return html.Div("No sample selected"), empty_fig, empty_fig
 
     emg_dict, labels_dict, subs_dict = get_epn_data_cached()
-    data = emg_dict[split][sample_idx]
+    raw_sample = emg_dict[split][sample_idx]
     label_id = labels_dict[split][sample_idx]
     sub_id = subs_dict[split][sample_idx]
 
+    emg_item = raw_sample if isinstance(raw_sample, EmgData) else EmgData(data=raw_sample)
+
     if 'norm' in norm_chk:
-        data = safe_znormalize_global(data)
+        normalizer = Normalize.create([emg_item])
+        data = normalizer(emg_item).data
+    else:
+        data = emg_item.data
 
     T, n_ch = data.shape
     duration_ms = (T / 200.0) * 1000.0  # Assume 200 Hz Myo armband sampling rate
@@ -769,7 +774,9 @@ def update_disco_view(subject_id, rec_idx, view_mode, win_idx, norm_chk, selecte
         return html.Div("No recording selected"), empty_fig
 
     recs, subs = get_disco_data_cached()
-    data = recs[rec_idx]
+    raw_sample = recs[rec_idx]
+    emg_item = raw_sample if isinstance(raw_sample, EmgData) else EmgData(data=raw_sample)
+    data = emg_item.data
 
     if view_mode == 'windowed':
         # Slice out window
@@ -778,7 +785,8 @@ def update_disco_view(subject_id, rec_idx, view_mode, win_idx, norm_chk, selecte
         data = data[start_i:end_i]
 
     if 'norm' in norm_chk:
-        data = safe_znormalize_global(data)
+        normalizer = Normalize.create([EmgData(data=data)])
+        data = normalizer(EmgData(data=data)).data
 
     T, n_ch = data.shape
     rms_per_ch = np.sqrt(np.mean(data ** 2, axis=0))
@@ -873,37 +881,44 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
             label = f"Walk Seg {i+1}"
         elif source_type == 'epn':
             emg_dict, labels_dict, _ = get_epn_data_cached()
-            train_emg = emg_dict['training']
-            train_labs = labels_dict['training']
+            train_emg = emg_dict['training'] if isinstance(emg_dict, dict) else emg_dict
+            train_labs = labels_dict['training'] if isinstance(labels_dict, dict) else labels_dict
             idx = rng.integers(0, len(train_emg))
             sample = train_emg[idx]
+            sample_data = sample.data if isinstance(sample, EmgData) else sample
             g_name = GESTURE_NAMES.get(train_labs[idx], 'Gesture')
-            if len(sample) > length:
-                st = rng.integers(0, len(sample) - length)
-                arr = sample[st:st + length]
+            if len(sample_data) > length:
+                st = rng.integers(0, len(sample_data) - length)
+                arr = sample_data[st:st + length]
             else:
-                arr = sample
+                arr = sample_data
             label = f"EPN ({g_name}) Seg {i+1}"
         elif source_type == 'disco':
             recs, _ = get_disco_data_cached()
             idx = rng.integers(0, len(recs))
             sample = recs[idx]
-            if len(sample) > length:
-                st = rng.integers(0, len(sample) - length)
-                arr = sample[st:st + length]
+            sample_data = sample.data if isinstance(sample, EmgData) else sample
+            if len(sample_data) > length:
+                st = rng.integers(0, len(sample_data) - length)
+                arr = sample_data[st:st + length]
             else:
-                arr = sample
+                arr = sample_data
             label = f"DISCO Noise Seg {i+1}"
         elif source_type == 'mixed':
             if i % 2 == 0:
                 emg_dict, labels_dict, _ = get_epn_data_cached()
-                idx = rng.integers(0, len(emg_dict['training']))
-                arr = emg_dict['training'][idx][:length]
+                train_emg = emg_dict['training'] if isinstance(emg_dict, dict) else emg_dict
+                idx = rng.integers(0, len(train_emg))
+                sample = train_emg[idx]
+                sample_data = sample.data if isinstance(sample, EmgData) else sample
+                arr = sample_data[:length]
                 label = f"EPN Gesture Seg {i+1}"
             else:
                 recs, _ = get_disco_data_cached()
                 idx = rng.integers(0, len(recs))
-                arr = recs[idx][:length]
+                sample = recs[idx]
+                sample_data = sample.data if isinstance(sample, EmgData) else sample
+                arr = sample_data[:length]
                 label = f"DISCO Noise Seg {i+1}"
 
         # Ensure correct 2D shape (T, 8)
@@ -914,7 +929,7 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
         elif arr.shape[1] > 8:
             arr = arr[:, :8]
 
-        raw_segments.append(arr)
+        raw_segments.append(EmgData(data=arr, is_normalized=True))
         segment_labels.append(label)
 
     # Perform Hanning cross-fade stitch
@@ -922,7 +937,7 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
     stitched_arr = stitch(raw_segments, overlap_samples=overlap_samples)
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-    total_input_len = sum(len(s) for s in raw_segments)
+    total_input_len = sum(len(s.data) for s in raw_segments)
     actual_stitched_len = len(stitched_arr)
     expected_overlap_loss = (n_segs - 1) * overlap_samples
 
@@ -930,7 +945,7 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
     seam_boundaries = []
     curr_pos = 0
     for i in range(len(raw_segments) - 1):
-        seg_len_curr = len(raw_segments[i])
+        seg_len_curr = len(raw_segments[i].data)
         seam_start = curr_pos + seg_len_curr - overlap_samples
         seam_end = seam_start + overlap_samples
         seam_boundaries.append((seam_start, seam_end))
@@ -1005,8 +1020,8 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
         inspect_ch = 0 if selected_ch == -1 else selected_ch
 
         # Extract boundary math
-        seg_out = raw_segments[seam_idx]
-        seg_in = raw_segments[seam_idx + 1]
+        seg_out = raw_segments[seam_idx].data
+        seg_in = raw_segments[seam_idx + 1].data
 
         overlap = min(len(seg_out), len(seg_in), overlap_samples)
         theta = np.linspace(0, np.pi / 2, overlap)

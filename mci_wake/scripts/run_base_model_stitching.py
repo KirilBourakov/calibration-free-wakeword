@@ -76,9 +76,7 @@ def main():
 
     for sample_idx in range(template_size, num_samples, increment):
         window_raw = emg_buffer[sample_idx - template_size : sample_idx]
-        window_norm = window_raw #safe_znormalize_global(window_raw)
-
-        feats = get_windows(window_norm, window_size, increment)
+        feats = get_windows(window_raw, window_size, increment)
         
         # Predict logits
         _, _, output_logits = base_model.predict(feats)

@@ -248,7 +248,7 @@ def get_features(
         window_inc: Increment step for the sliding window.
         feats: List of feature names to extract. If None, returns raw windows.
         feat_dic: Optional dictionary for feature extraction parameters.
-        force_normalize: Whether to apply safe_znormalize to raw EMG signals before windowing. Defaults to True.
+        force_normalize: Whether EMG signals must be pre-normalized before windowing. Defaults to True.
 
     Returns:
         npt.NDArray[Any]: Extracted features for each data sample.
