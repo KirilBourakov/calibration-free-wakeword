@@ -57,10 +57,10 @@ class Normalize(BaseModel):
         )
 
     @overload
-    def transform(self, emg: EmgData) -> EmgData: ...
+    def __call__(self, emg: EmgData) -> EmgData: ...
     @overload
-    def transform(self, emg: list[EmgData]) -> list[EmgData]: ...
-    def transform(self, emg: list[EmgData] | EmgData) -> list[EmgData] | EmgData:
+    def __call__(self, emg: list[EmgData]) -> list[EmgData]: ...
+    def __call__(self, emg: list[EmgData] | EmgData) -> list[EmgData] | EmgData:
         single = isinstance(emg, EmgData)
         items = [emg] if single else emg
 

@@ -28,8 +28,8 @@ def main():
         f"Test set:  {len(test_data)} samples ({np.sum(test_labels == 1)} positive, {np.sum(test_labels == 0)} negative)")
 
     # 5. Extract Sliding Subwindow Features
-    train_emg = get_features(training_data, WINDOW_SIZE, INCREMENT_SIZE, None, None, normalize=False)
-    test_emg = get_features(test_data, WINDOW_SIZE, INCREMENT_SIZE, None, None, normalize=False)
+    train_emg = get_features(training_data, WINDOW_SIZE, INCREMENT_SIZE, None, None, force_normalize=False)
+    test_emg = get_features(test_data, WINDOW_SIZE, INCREMENT_SIZE, None, None, force_normalize=False)
 
     # 6. Train the model using PyTorch Lightning
     model_config = DiscreteClassifierConfig(

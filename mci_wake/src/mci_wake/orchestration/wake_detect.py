@@ -7,9 +7,9 @@ import statistics
 
 from libemg.data_handler import OnlineDataHandler
 
+from mci_wake.data.normalization import Normalize
 from mci_wake.data_handler.abstract import AbstractDataHandler, OfflineCapableAbstractDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier
-from mci_wake.utils.normalize import safe_znormalize_global
 
 class ModelState:
     def __init__(
@@ -18,7 +18,7 @@ class ModelState:
         window_size: int,
         increment: int,
         buffer_size: int,
-        normalize: bool = True,
+        normalize: Normalize | None = None,
     ):
         assert model.config.n_classes == 2
         self.model = model
@@ -48,7 +48,7 @@ class ModelState:
         fe = FeatureExtractor()
         data = np.array([
             get_windows(
-                safe_znormalize_global(d) if (len(d) > 0 and self.normalize) else d,
+                self.normalize(d) if (len(d) > 0 and self.normalize is not None) else d,
                 self.window_size,
                 self.increment
             )

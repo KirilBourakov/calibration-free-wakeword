@@ -1,11 +1,12 @@
+from dataclasses import replace
 from typing import Union, Any, Optional, Tuple, List, Dict
 
 import numpy as np
 from numpy import typing as npt
 
 import libemg
+from mci_wake.data.types import EmgData
 from mci_wake.neural.classifier import TrainData
-from mci_wake.utils import safe_znormalize_global
 
 
 def _parse_subject_id(val: Union[int, str, Any]) -> Optional[int]:
@@ -83,7 +84,7 @@ def filter_training(
     return filtered_emg_data_all, filtered_labels_all, filtered_subject_ids_all, filtered_adl_data, filtered_adl_subjects
 
 
-def preprocess_nm_data(emg_data_all: npt.NDArray[np.object_], labels_all: npt.NDArray[Any]) -> npt.NDArray[np.object_]:
+def preprocess_nm_data(emg_data_all: npt.NDArray[EmgData], labels_all: npt.NDArray[Any]) -> npt.NDArray[EmgData]:
     """Randomly clips 'No Motion' segments to introduce variability.
 
     Args:
@@ -91,24 +92,28 @@ def preprocess_nm_data(emg_data_all: npt.NDArray[np.object_], labels_all: npt.ND
         labels_all: The corresponding labels for the EMG samples.
 
     Returns:
-        npt.NDArray[np.object_]: The EMG data with randomized 'No Motion' segment lengths.
+        npt.NDArray[EmgData]: The EMG data with randomized 'No Motion' segment lengths.
     """
+    emg_data_all = emg_data_all.copy()
     nm_idxs = np.where(labels_all == 0)[0]
-    # Resize NM data
+
     for i in nm_idxs:
+        sample = emg_data_all[i]
         clip_length = np.random.randint(150, 351)
-        emg_data_all[i] = emg_data_all[i][0:clip_length]
+        clipped_data = sample.data[0:clip_length]
+        emg_data_all[i] = replace(sample, data=clipped_data)
+
     return emg_data_all
 
 
 def prepare_datasets(
-        emg_data_all: npt.NDArray[np.object_],
-        labels_all: npt.NDArray[Any],
-        adl_data: npt.NDArray[np.object_],
-        window_size: int,
-        increment_size: int,
-        train_split: float = 0.95,
-        test_split: float = 0.05
+    emg_data_all: npt.NDArray[EmgData],
+    labels_all: npt.NDArray[Any],
+    adl_data: npt.NDArray[EmgData],
+    window_size: int,
+    increment_size: int,
+    train_split: float = 0.95,
+    test_split: float = 0.05
 ) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
     """Extracts features and splits the data into training and testing sets proportionally.
 
@@ -152,10 +157,10 @@ def prepare_datasets(
 
 
 def prepare_loso_datasets(
-    emg_data_all: npt.NDArray[np.object_],
+    emg_data_all: npt.NDArray[EmgData],
     labels_all: npt.NDArray[Any],
     subject_ids_all: npt.NDArray[Any],
-    adl_data: npt.NDArray[np.object_],
+    adl_data: npt.NDArray[EmgData],
     adl_ids: npt.NDArray[np.int64],
     window_size: int,
     increment_size: int,
@@ -228,12 +233,12 @@ def prepare_loso_datasets(
 
 
 def get_features(
-    data: Union[npt.NDArray[Any], List[Any]],
+    data: Union[npt.NDArray[EmgData], List[EmgData]],
     window_size: int,
     window_inc: int,
     feats: Optional[List[str]],
     feat_dic: Optional[Dict[str, Any]],
-    normalize: bool = True
+    force_normalize: bool = True
 ) -> npt.NDArray[Any]:
     """Extracts features from the raw EMG data using a sliding window.
 
@@ -243,7 +248,7 @@ def get_features(
         window_inc: Increment step for the sliding window.
         feats: List of feature names to extract. If None, returns raw windows.
         feat_dic: Optional dictionary for feature extraction parameters.
-        normalize: Whether to apply safe_znormalize to raw EMG signals before windowing. Defaults to True.
+        force_normalize: Whether to apply safe_znormalize to raw EMG signals before windowing. Defaults to True.
 
     Returns:
         npt.NDArray[Any]: Extracted features for each data sample.
@@ -251,12 +256,10 @@ def get_features(
     from libemg.feature_extractor import FeatureExtractor
     fe = FeatureExtractor()
 
-    if normalize:
-        normalized_data = [safe_znormalize_global(d) if len(d) > 0 else d for d in data]
-    else:
-        normalized_data = data
+    if force_normalize:
+        assert all(d.is_normalized for d in data)
 
-    windowed_data = np.array([libemg.utils.get_windows(d, window_size, window_inc) for d in normalized_data], dtype='object')
+    windowed_data = np.array([libemg.utils.get_windows(d, window_size, window_inc) for d in data], dtype='object')
 
     if feats is None:
         return windowed_data
