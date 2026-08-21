@@ -168,7 +168,7 @@ def load_disco_adls(
 
 
 def split_disco_adls(
-    recordings: Sequence[EmgData] | Sequence[npt.NDArray[np.float64]],
+    recordings: Sequence[EmgData],
     subject_ids: npt.NDArray[np.int_],
     window: tuple[int, int] = (150, 400),
     step: int = 50
@@ -188,16 +188,15 @@ def split_disco_adls(
     window_subject_ids = []
 
     for item, s in zip(recordings, subject_ids):
-        data = item.data if isinstance(item, EmgData) else item
         # Secondary safety check in case data is passed directly to the splitter
-        if len(data) < min_window:
+        if len(item.data) < min_window:
             continue
 
-        for i in range(0, len(data) - min_window + 1, step):
-            max_possible_len = min(max_window, len(data) - i)
+        for i in range(0, len(item.data) - min_window + 1, step):
+            max_possible_len = min(max_window, len(item.data) - i)
             win_len = random.randint(min_window, max_possible_len)
 
-            windows.append(EmgData(data=data[i : i + win_len], is_normalized=False))
+            windows.append(EmgData(data=item.data[i : i + win_len], is_normalized=False))
             window_subject_ids.append(s)
 
     return np.array(windows, dtype='object'), np.array(window_subject_ids, dtype=int)

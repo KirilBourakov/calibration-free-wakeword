@@ -18,4 +18,4 @@ def generate_training_data(
     Stitching is done strictly within the same subject to model realistic intra-user dynamics.
     """
     # need to normalize pre-stitching
-    pass
+    return [], []

@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import Field
 from pydantic.dataclasses import dataclass
 from torch import Tensor
+from torch.nn import RNNBase
 from torch.nn.functional import softmax
 from torch.utils.data import DataLoader, Dataset
 
@@ -65,6 +66,7 @@ class DiscreteClassifier(nn.Module):
         conv_out_size = conv_out.shape[-1] 
 
         # Set the temporal feature extraction piece
+        self.temporal: RNNBase
         if config.type == 'LSTM':
             self.temporal = nn.LSTM(conv_out_size, config.temporal_hidden_size, num_layers=config.temporal_layers, batch_first=True, dropout=dropout)
         elif config.type == 'BILSTM':

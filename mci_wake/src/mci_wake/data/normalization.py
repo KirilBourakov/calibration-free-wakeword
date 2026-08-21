@@ -61,8 +61,7 @@ class Normalize(BaseModel):
     @overload
     def __call__(self, emg: list[EmgData]) -> list[EmgData]: ...
     def __call__(self, emg: list[EmgData] | EmgData) -> list[EmgData] | EmgData:
-        single = isinstance(emg, EmgData)
-        items = [emg] if single else emg
+        items = [emg] if isinstance(emg, EmgData) else emg
 
         transformed = []
         for d in items:
@@ -73,4 +72,4 @@ class Normalize(BaseModel):
             else:
                 transformed.append(EmgData(data=d.data.copy(), is_normalized=True))
 
-        return transformed[0] if single else transformed
+        return transformed[0] if isinstance(emg, EmgData) else transformed

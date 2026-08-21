@@ -26,7 +26,7 @@ class ModelState:
         self.increment = increment
         self.buffer_size = buffer_size
         self.normalize = normalize
-        self.buffer = []
+        self.buffer: list[int] = []
 
     def next_step(self, odh: AbstractDataHandler, size: int):
         dh_out = odh.get_data(size)
