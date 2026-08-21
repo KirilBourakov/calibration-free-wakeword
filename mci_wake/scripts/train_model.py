@@ -17,12 +17,8 @@ def main() -> None:
     emg = preprocess_nm_data(emg)
 
     # 3. Prepare features and splits using LOSO with safe normalization
-    train_emg, train_labels, test_emg, test_labels, train_subject_ids, normalizer = prepare_loso_datasets(
-        emg_data_all,
-        labels_all,
-        subject_ids_all,
-        adl_data,
-        adl_ids,
+    train, test, train_subject_ids, normalizer = prepare_loso_datasets(
+        emg, adl,
         WINDOW_SIZE,
         INCREMENT_SIZE,
         test_subject_ratio=TEST_SUBJECT_RATIO,
@@ -30,7 +26,7 @@ def main() -> None:
 
     # 4. Train classifier
     model_config = DiscreteClassifierConfig(n_classes=6)
-    train_model(train_emg, train_labels, test_emg, test_labels, model_config, customers=train_subject_ids)
+    train_model(train, test, model_config, customers=train_subject_ids)
 
 
 if __name__ == "__main__":

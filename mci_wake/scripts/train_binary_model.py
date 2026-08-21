@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 
 from mci_wake.data import gesture_mapping, load_raw_data, preprocess_nm_data, prepare_loso_datasets
@@ -22,25 +24,21 @@ def main() -> None:
     target_original_label = gesture_mapping[TARGET_GESTURE]
 
     # 1. Load data alongside subject IDs
-    emg_data_all, labels_all, subject_ids_all, adl_data, adl_ids = load_raw_data()
-    binary_labels_all = np.where(labels_all == target_original_label, 1, 0)
+    emg, adl = load_raw_data()
+    emg = replace(emg, labels=np.where(emg.labels == target_original_label, 1, 0))
     
     print(f"Mapping details:")
     print(f"  - Target gesture '{TARGET_GESTURE}' (original label {target_original_label}) -> 1")
     print(f"  - All other gestures and noGesture -> 0")
-    print(f"  - Total positive target samples: {np.sum(binary_labels_all == 1)}")
-    print(f"  - Total negative samples (other gestures + noGesture): {np.sum(binary_labels_all == 0)}")
+    print(f"  - Total positive target samples: {np.sum(emg.labels == 1)}")
+    print(f"  - Total negative samples (other gestures + noGesture): {np.sum(emg.labels == 0)}")
 
     # 2. Preprocess 'No Motion' (noGesture) data
-    emg_data_all = preprocess_nm_data(emg_data_all, labels_all)
+    emg_data_all = preprocess_nm_data(emg)
 
     # 3. Prepare features and splits using LOSO with safe normalization
-    train_emg, train_labels, test_emg, test_labels, train_subject_ids, normalizer = prepare_loso_datasets(
-        emg_data_all,
-        binary_labels_all,
-        subject_ids_all,
-        adl_data,
-        adl_ids,
+    train, test, ids, normalizer = prepare_loso_datasets(
+        emg, adl,
         WINDOW_SIZE,
         INCREMENT_SIZE,
         test_subject_ratio=TEST_SUBJECT_RATIO,
@@ -48,7 +46,7 @@ def main() -> None:
 
     # 4. Train binary classifier
     model_config = DiscreteClassifierConfig(n_classes=2)
-    train_model(train_emg, train_labels, test_emg, test_labels, model_config, customers=train_subject_ids)
+    train_model(train, test, model_config, customers=ids)
 
 if __name__ == "__main__":
     main()

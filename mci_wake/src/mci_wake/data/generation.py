@@ -1,13 +1,12 @@
 import numpy as np
 
-from mci_wake.data import RawData
 import numpy.typing as npt
 
-from mci_wake.data.types import EmgData
+from mci_wake.data.types import EmgData, EmgDataset
 
 
 def generate_training_data(
-    data: RawData,
+    data: EmgDataset,
     target_sequence: list[str],
     n_positive_per_subject: int = 15,
     n_hard_negative_per_subject: int = 15,
