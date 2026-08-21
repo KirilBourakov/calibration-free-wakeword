@@ -5,6 +5,7 @@ import numpy as np
 from numpy import typing as npt
 
 import libemg
+from mci_wake.data.normalization import Normalize
 from mci_wake.data.types import EmgData
 from mci_wake.neural.classifier import TrainData
 
@@ -114,8 +115,8 @@ def prepare_datasets(
     increment_size: int,
     train_split: float = 0.95,
     test_split: float = 0.05
-) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any]]:
-    """Extracts features and splits the data into training and testing sets proportionally.
+) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], Normalize]:
+    """Extracts features and splits the data into training and testing sets proportionally with safe normalization.
 
     Args:
         emg_data_all: The complete set of gesture EMG data samples.
@@ -127,33 +128,45 @@ def prepare_datasets(
         test_split: The proportion of data to use for testing. Defaults to 0.05.
 
     Returns:
-        Tuple containing (train_emg, train_labels, test_emg, test_labels).
+        Tuple containing (train_emg, train_labels, test_emg, test_labels, normalizer).
     """
     print("Warning: prepare_loso_datasets recommended.")
 
+    n_emg_train = int(len(emg_data_all) * train_split)
+    n_adl_train = int(len(adl_data) * train_split)
+
+    train_emg_raw = emg_data_all[:n_emg_train]
+    test_emg_raw = emg_data_all[-int(len(emg_data_all) * test_split):]
+    train_labels = labels_all[:n_emg_train]
+    test_labels = labels_all[-int(len(labels_all) * test_split):]
+
+    adl_train_raw = adl_data[:n_adl_train]
+    adl_test_raw = adl_data[-int(len(adl_data) * test_split):]
+
+    # Fit Normalize strictly on training partition
+    normalizer = Normalize.create(list(train_emg_raw) + list(adl_train_raw))
+
+    # Apply normalizer
+    train_emg_norm = normalizer(list(train_emg_raw))
+    adl_train_norm = normalizer(list(adl_train_raw))
+    test_emg_norm = normalizer(list(test_emg_raw))
+    adl_test_norm = normalizer(list(adl_test_raw))
+
     # Extract features
-    emg_feats: npt.NDArray[Any] = get_features(emg_data_all, window_size, increment_size, None, None)
-    adl_feats: npt.NDArray[Any] = get_features(adl_data, window_size, increment_size, None, None)
+    train_emg_feats: npt.NDArray[Any] = get_features(train_emg_norm, window_size, increment_size, None, None)
+    test_emg_feats: npt.NDArray[Any] = get_features(test_emg_norm, window_size, increment_size, None, None)
+    adl_train_feats: npt.NDArray[Any] = get_features(adl_train_norm, window_size, increment_size, None, None)
+    adl_test_feats: npt.NDArray[Any] = get_features(adl_test_norm, window_size, increment_size, None, None)
 
-    # Split Dataset
-    train_labels = labels_all[0:int(len(labels_all) * train_split)]
-    test_labels = labels_all[-int(test_split * len(labels_all)):]
-    train_emg = emg_feats[0:int(len(emg_feats) * train_split)]
-    test_emg = emg_feats[-int(test_split * len(emg_feats)):]
+    train_labels_final: npt.NDArray[Any] = np.hstack([train_labels, np.zeros(len(adl_train_feats))])
+    train_emg_final: npt.NDArray[Any] = np.hstack([train_emg_feats, adl_train_feats])
+    test_labels_final: npt.NDArray[Any] = np.hstack([test_labels, np.zeros(len(adl_test_feats))])
+    test_emg_final: npt.NDArray[Any] = np.hstack([test_emg_feats, adl_test_feats])
 
-    # Add ADL data
-    adl_train = adl_feats[0:int(len(adl_feats) * train_split)]
-    adl_test = adl_feats[-int(len(adl_feats) * test_split):]
+    print(f"Final training set: {len(train_emg_final)} samples ({len(train_labels)} gestures + {len(adl_train_feats)} ADL)")
+    print(f"Final testing set: {len(test_emg_final)} samples ({len(test_labels)} gestures + {len(adl_test_feats)} ADL)")
 
-    train_labels_final: npt.NDArray[Any] = np.hstack([train_labels, np.zeros(len(adl_train))])
-    train_emg_final: npt.NDArray[Any] = np.hstack([train_emg, adl_train])
-    test_labels_final: npt.NDArray[Any] = np.hstack([test_labels, np.zeros(len(adl_test))])
-    test_emg_final: npt.NDArray[Any] = np.hstack([test_emg, adl_test])
-
-    print(f"Final training set: {len(train_emg_final)} samples ({len(train_labels)} gestures + {len(adl_train)} ADL)")
-    print(f"Final testing set: {len(test_emg_final)} samples ({len(test_labels)} gestures + {len(adl_test)} ADL)")
-
-    return train_emg_final, train_labels_final, test_emg_final, test_labels_final
+    return train_emg_final, train_labels_final, test_emg_final, test_labels_final, normalizer
 
 
 def prepare_loso_datasets(
@@ -167,17 +180,18 @@ def prepare_loso_datasets(
     test_subject_ids: Optional[List[int]] = None,
     test_subject_ratio: float = 0.1,
     random_seed: int = 42,
-) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], TrainData]:
-    """Extracts features and splits data using Leave-One-Subject-Out (LOSO) cross-validation logic.
+) -> Tuple[npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], npt.NDArray[Any], TrainData, Normalize]:
+    """Extracts features and splits data using Leave-One-Subject-Out (LOSO) cross-validation with safe normalization.
 
     Ensures that test subjects' gesture data is strictly isolated from the training set,
-    enabling true evaluation of calibration-free generalization to unseen subjects.
+    and that normalization parameters are fitted exclusively on training subjects.
 
     Args:
         emg_data_all: Complete set of gesture EMG data samples.
         labels_all: Mapped labels for all samples.
         subject_ids_all: Subject/User IDs corresponding to each EMG sample.
         adl_data: ADL noise segments.
+        adl_ids: Parallel array of ADL subject IDs.
         window_size: Window size for sliding feature extraction.
         increment_size: Increment step size.
         test_subject_ids: Specific subject IDs to hold out for testing. If None, randomly picks test_subject_ratio of subjects.
@@ -185,7 +199,7 @@ def prepare_loso_datasets(
         random_seed: Seed for random subject selection.
 
     Returns:
-        Tuple containing (train_emg, train_labels, test_emg, test_labels, train_subject_ids).
+        Tuple containing (train_emg, train_labels, test_emg, test_labels, train_subject_ids, normalizer).
     """
     unique_subjects = np.unique(subject_ids_all)
     if test_subject_ids is None:
@@ -201,20 +215,30 @@ def prepare_loso_datasets(
     test_emg_raw = emg_data_all[test_mask]
     test_labels_raw = labels_all[test_mask]
 
-    # Extract features
-    train_emg_feats: npt.NDArray[Any] = get_features(train_emg_raw, window_size, increment_size, None, None)
-    test_emg_feats: npt.NDArray[Any] = get_features(test_emg_raw, window_size, increment_size, None, None)
-    adl_feats: npt.NDArray[Any] = get_features(adl_data, window_size, increment_size, None, None)
-
     # Split ADL noise data proportionally
-    n_adl_train = int(len(adl_feats) * (1.0 - test_subject_ratio))
-    adl_train = adl_feats[:n_adl_train]
-    adl_test = adl_feats[n_adl_train:]
+    n_adl_train = int(len(adl_data) * (1.0 - test_subject_ratio))
+    adl_train_raw = adl_data[:n_adl_train]
+    adl_test_raw = adl_data[n_adl_train:]
 
-    train_labels_final: npt.NDArray[Any] = np.hstack([train_labels_raw, np.zeros(len(adl_train))])
-    train_emg_final: npt.NDArray[Any] = np.hstack([train_emg_feats, adl_train])
-    test_labels_final: npt.NDArray[Any] = np.hstack([test_labels_raw, np.zeros(len(adl_test))])
-    test_emg_final: npt.NDArray[Any] = np.hstack([test_emg_feats, adl_test])
+    # Fit Normalize strictly on training partition
+    normalizer = Normalize.create(list(train_emg_raw) + list(adl_train_raw))
+
+    # Apply normalizer
+    train_emg_norm = normalizer(list(train_emg_raw))
+    adl_train_norm = normalizer(list(adl_train_raw))
+    test_emg_norm = normalizer(list(test_emg_raw))
+    adl_test_norm = normalizer(list(adl_test_raw))
+
+    # Extract features
+    train_emg_feats: npt.NDArray[Any] = get_features(train_emg_norm, window_size, increment_size, None, None)
+    test_emg_feats: npt.NDArray[Any] = get_features(test_emg_norm, window_size, increment_size, None, None)
+    adl_train_feats: npt.NDArray[Any] = get_features(adl_train_norm, window_size, increment_size, None, None)
+    adl_test_feats: npt.NDArray[Any] = get_features(adl_test_norm, window_size, increment_size, None, None)
+
+    train_labels_final: npt.NDArray[Any] = np.hstack([train_labels_raw, np.zeros(len(adl_train_feats))])
+    train_emg_final: npt.NDArray[Any] = np.hstack([train_emg_feats, adl_train_feats])
+    test_labels_final: npt.NDArray[Any] = np.hstack([test_labels_raw, np.zeros(len(adl_test_feats))])
+    test_emg_final: npt.NDArray[Any] = np.hstack([test_emg_feats, adl_test_feats])
 
     data = TrainData()
     for s in np.unique(subject_ids_all[train_mask]):
@@ -226,10 +250,10 @@ def prepare_loso_datasets(
     print(f"Held-out test subject IDs ({len(test_subject_ids)} subjects): {test_subject_ids}")
     print(f"Training EPN subjects ({len(data.emg)} subjects): {data.emg}")
     print(f"Training ADL subjects ({len(data.disco)} subjects): {data.disco}")
-    print(f"Final training set: {len(train_emg_final)} samples ({len(train_labels_raw)} gestures + {len(adl_train)} ADL)")
-    print(f"Final testing set:  {len(test_emg_final)} samples ({len(test_labels_raw)} gestures + {len(adl_test)} ADL)")
+    print(f"Final training set: {len(train_emg_final)} samples ({len(train_labels_raw)} gestures + {len(adl_train_feats)} ADL)")
+    print(f"Final testing set:  {len(test_emg_final)} samples ({len(test_labels_raw)} gestures + {len(adl_test_feats)} ADL)")
 
-    return train_emg_final, train_labels_final, test_emg_final, test_labels_final, data
+    return train_emg_final, train_labels_final, test_emg_final, test_labels_final, data, normalizer
 
 
 def get_features(
@@ -259,7 +283,7 @@ def get_features(
     if force_normalize:
         assert all(d.is_normalized for d in data)
 
-    windowed_data = np.array([libemg.utils.get_windows(d, window_size, window_inc) for d in data], dtype='object')
+    windowed_data = np.array([libemg.utils.get_windows(d.data if isinstance(d, EmgData) else d, window_size, window_inc) for d in data], dtype='object')
 
     if feats is None:
         return windowed_data

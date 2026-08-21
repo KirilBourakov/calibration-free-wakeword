@@ -34,8 +34,8 @@ def main() -> None:
     # 2. Preprocess 'No Motion' (noGesture) data
     emg_data_all = preprocess_nm_data(emg_data_all, labels_all)
 
-    # 3. Prepare features and splits using LOSO
-    train_emg, train_labels, test_emg, test_labels, train_subject_ids = prepare_loso_datasets(
+    # 3. Prepare features and splits using LOSO with safe normalization
+    train_emg, train_labels, test_emg, test_labels, train_subject_ids, normalizer = prepare_loso_datasets(
         emg_data_all,
         binary_labels_all,
         subject_ids_all,

@@ -17,6 +17,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from mci_wake.data import gesture_mapping, load_raw_data
+from mci_wake.data.normalization import Normalize
 from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
 from mci_wake.neural.io import load
 from mci_wake.data_handler.stitching import StitchingDataHandler
@@ -46,12 +47,16 @@ def main():
     print("Loading raw EMG and ADL datasets...")
     emg_data_all, labels_all, _, adl_data, _ = load_raw_data()
 
+    normalizer = Normalize.create(list(emg_data_all) + list(adl_data))
+    emg_data_norm = normalizer(list(emg_data_all))
+    adl_data_norm = normalizer(list(adl_data))
+
     # 3. Instantiate StitchingDataHandler
     print(f"Initializing StitchingDataHandler with gestures={gestures}, probabilities={probabilities}...")
     handler = StitchingDataHandler(
-        emg_data=emg_data_all,
+        emg_data=emg_data_norm,
         emg_labels=labels_all,
-        adl_data=adl_data,
+        adl_data=adl_data_norm,
         gestures=gestures,
         probabilities=probabilities,
         realtime=False,
