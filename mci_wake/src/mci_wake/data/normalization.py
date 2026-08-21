@@ -55,13 +55,16 @@ class Normalize(BaseModel):
             std=global_std.astype(np.float32)
         )
 
-    def __call__(self, emg: EmgDataset) -> EmgDataset:
+    def __call__(self, emg: EmgDataset | npt.NDArray[np.floating]) -> EmgDataset | npt.NDArray[np.float32]:
+        if isinstance(emg, np.ndarray):
+            return ((emg - self.mean) / self.std).astype(np.float32)
+
         if emg.is_normalized:
             return emg
 
         data: list[npt.NDArray[np.float32]] = []
         for d in emg.data:
-            normalized_data = (d - self.mean) / self.std
+            normalized_data = ((d - self.mean) / self.std).astype(np.float32)
             data.append(normalized_data)
 
-        return replace(emg, data=data)
+        return replace(emg, data=data, is_normalized=True)

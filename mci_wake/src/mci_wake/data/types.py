@@ -35,27 +35,36 @@ class EmgDataset:
         return len(self.data)
 
     def __iter__(self):
-        return iter((self.data, self.labels, self.subjects))
+        return iter(zip(self.data, self.labels, self.subjects))
 
     @overload
-    def __getitem__(self, idx: int) -> tuple[npt.NDArray[np.float32], np.int32, np.int32]: ...
+    def __getitem__(self, idx: int | np.integer) -> tuple[npt.NDArray[np.float32], np.int32, np.int32]:
+        ...
     @overload
-    def __getitem__(self, idx: slice) -> "EmgDataset": ...
-    def __getitem__(self, idx: int | slice) -> "EmgDataset | tuple[npt.NDArray[np.float32], np.int32, np.int32]":
-        """Allows indexing dataset[0] and slicing dataset[:10]"""
-        # slicing
-        if isinstance(idx, slice):
+    def __getitem__(self, idx: slice | list | npt.NDArray) -> "EmgDataset":
+        ...
+    def __getitem__(self, idx: int | np.integer | slice | list | npt.NDArray) -> "EmgDataset | tuple[npt.NDArray[np.float32], np.int32, np.int32]":
+        # 1.single
+        if isinstance(idx, (int, np.integer)):
+            return self.data[idx], self.labels[idx], self.subjects[idx]
+
+        # 2. subsets (slice, list, ndarray)
+        if isinstance(idx, (slice, list, np.ndarray)):
+            if isinstance(idx, slice):
+                new_data = self.data[idx]
+            elif isinstance(idx, np.ndarray) and idx.dtype == bool:
+                new_data = [d for d, m in zip(self.data, idx) if m]
+            else:
+                new_data = [self.data[i] for i in idx]
+
             return EmgDataset(
-                data=self.data[idx],
+                data=new_data,
                 labels=self.labels[idx],
                 subjects=self.subjects[idx],
                 is_normalized=self.is_normalized
             )
-        # single integer
-        elif isinstance(idx, int):
-            return self.data[idx], self.labels[idx], self.subjects[idx]
-        else:
-            raise TypeError(f"Invalid argument type: {type(idx)}")
+
+        raise TypeError(f"Invalid argument type: {type(idx)}")
 
     def combine(self, other: "EmgDataset") -> "EmgDataset":
         assert other.is_normalized == self.is_normalized, "Cannot combine EmgDatasets with different normalized states."
