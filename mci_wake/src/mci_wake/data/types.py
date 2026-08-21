@@ -66,13 +66,6 @@ class EmgDataset:
             is_normalized=self.is_normalized
         )
 
-@dataclass
-class WindowedEmgDataset:
-    data: npt.NDArray[np.float32]        # Shape: (N, W, C) contiguous array
-    labels: npt.NDArray[np.int64]        # Shape: (N,)
-    subjects: npt.NDArray[np.int64]      # Shape: (N,)
-    is_normalized: bool = False
-
 
 @dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
 class EmgData:
