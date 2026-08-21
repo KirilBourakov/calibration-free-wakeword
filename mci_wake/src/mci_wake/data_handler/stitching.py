@@ -289,7 +289,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         assert matching, "Cannot _get_no_gesture_segment: matching is empty"
         rec = self.emg_data[random.choice(matching)]
         if len(rec.data) >= num_samples:
-            start_i = random.randint(0, len(rec) - num_samples)
+            start_i = random.randint(0, len(rec.data) - num_samples)
             d = rec.data[start_i : start_i + num_samples]
         else:
             d = rec.data[:num_samples]

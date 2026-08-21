@@ -101,7 +101,7 @@ class WakeDetect:
         min_template_size=150,
         sequence_timeout = 2.0,
         debug=True,
-        normalize=True,
+        normalize: Normalize | None = None,
         verbose=True
     ):
         self.odh = odh
