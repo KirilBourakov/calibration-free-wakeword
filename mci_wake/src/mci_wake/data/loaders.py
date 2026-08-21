@@ -8,7 +8,7 @@ from typing import Dict, Any, Tuple, Optional, Sequence
 import numpy as np
 from numpy import typing as npt
 
-from mci_wake.data.types import EmgData, gesture_mapping, ADL_DATA, EPN_DATA, EmgDataset
+from mci_wake.data.types import gesture_mapping, ADL_DATA, EPN_DATA, EmgDataset
 
 
 def load_raw_data(presplit_adl=True) -> tuple[EmgDataset, EmgDataset]:

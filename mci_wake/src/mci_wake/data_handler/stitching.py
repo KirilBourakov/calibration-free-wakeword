@@ -59,7 +59,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
         # Precompute label indices
         self._label_indices: dict[Any, list[int]] = {}
-        for idx, label in enumerate(self.emg_labels):
+        for idx, label in enumerate(self.emg_data.labels):
             self._label_indices.setdefault(label, []).append(idx)
 
         self.start_time: float | None = None
@@ -203,7 +203,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         if not new_segments:
             return
 
-        self._ensure_capacity(sum(len(s.data) for s in new_segments))
+        self._ensure_capacity(sum(len(s) for s in new_segments))
         for seg in new_segments:
             self._buffer_len = stitch_into_buffer(
                 self._buffer,
@@ -226,7 +226,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         if r < p_adl:
             # empty adl data
             idx = random.randint(0, len(self.adl_data) - 1)
-            segments.append(self.adl_data[idx])
+            segments.append(self.adl_data.data[idx])
         elif r < p_adl + p_emg:
             # some random movement
             if len(self.gesture_sequence) == 1:
@@ -249,7 +249,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             # Inserts [empty] [gesture 1] [empty] [gesture 2] ... [gesture n]
             is_test_case = True
             leading_no_g = self._get_no_gesture_segment(max_duration_sec=0.25)
-            if leading_no_g is not None and len(leading_no_g.data) > 0:
+            if leading_no_g is not None and len(leading_no_g) > 0:
                 segments.append(leading_no_g)
 
             for i, g_id in enumerate(self.gesture_sequence):
@@ -260,7 +260,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
                 if i < len(self.gesture_sequence) - 1:
                     no_g_seg = self._get_no_gesture_segment(max_duration_sec=0.75)
-                    if no_g_seg is not None and len(no_g_seg.data) > 0:
+                    if no_g_seg is not None and len(no_g_seg) > 0:
                         segments.append(no_g_seg)
 
         return segments, is_test_case
@@ -289,7 +289,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         assert matching, "Cannot _get_no_gesture_segment: matching is empty"
         rec = self.emg_data.data[random.choice(matching)]
         if len(rec) >= num_samples:
-            start_i = random.randint(0, len(rec.data) - num_samples)
+            start_i = random.randint(0, len(rec) - num_samples)
             return rec[start_i : start_i + num_samples]
         return rec[:num_samples]
 

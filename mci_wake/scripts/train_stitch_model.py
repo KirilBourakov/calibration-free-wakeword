@@ -19,17 +19,17 @@ def main():
 
     train, test = emg.combine(adl).split(TEST_SUBJECT_RATIO)
 
-    training_data, training_labels = generate_training_data(train, TARGET_SEQUENCE)
-    test_data, test_labels = generate_training_data(test, TARGET_SEQUENCE)
+    train_data = generate_training_data(train, TARGET_SEQUENCE)
+    test_data = generate_training_data(test, TARGET_SEQUENCE)
 
     print(
-        f"Train set: {len(training_data)} samples ({np.sum(training_labels == 1)} positive, {np.sum(training_labels == 0)} negative)")
+        f"Train set: {len(train_data)} samples ({np.sum(train_data.labels == 1)} positive, {np.sum(train_data.labels == 0)} negative)")
     print(
-        f"Test set:  {len(test_data)} samples ({np.sum(test_labels == 1)} positive, {np.sum(test_labels == 0)} negative)")
+        f"Test set:  {len(test_data)} samples ({np.sum(test_data.labels == 1)} positive, {np.sum(test_data.labels == 0)} negative)")
 
     # 5. Extract Sliding Subwindow Features
-    train_emg = get_features(training_data, WINDOW_SIZE, INCREMENT_SIZE, None, None, force_normalize=False)
-    test_emg = get_features(test_data, WINDOW_SIZE, INCREMENT_SIZE, None, None, force_normalize=False)
+    train_emg = get_features(train_data, WINDOW_SIZE, INCREMENT_SIZE, force_normalize=False)
+    test_emg = get_features(test_data, WINDOW_SIZE, INCREMENT_SIZE, force_normalize=False)
 
     # 6. Train the model using PyTorch Lightning
     model_config = DiscreteClassifierConfig(
@@ -41,11 +41,11 @@ def main():
     )
 
     train_sub_data = TrainData(
-        emg=[f"user{s}" for s in np.unique(train.epn_subjects).tolist()],
-        disco=[f"S{s}" for s in np.unique(train.adl_subjects).tolist()],
+        emg=[f"user{s}" for s in np.unique(train.subjects).tolist()],
+        disco=[],
     )
 
-    train_model(train_emg, training_labels, test_emg, test_labels, model_config, customers=train_sub_data)
+    train_model(train_emg, test_emg, model_config, customers=train_sub_data)
 
 if __name__ == "__main__":
     main()

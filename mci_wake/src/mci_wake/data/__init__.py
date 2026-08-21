@@ -1,7 +1,7 @@
 from mci_wake.neural.classifier import TrainData
 from mci_wake.data.loaders import load_raw_data, load_epn_data
 from mci_wake.data.processing import filter_training, preprocess_nm_data, prepare_datasets, prepare_loso_datasets
-from mci_wake.data.types import EPNData, gesture_mapping
+from mci_wake.data.types import gesture_mapping, EmgDataset
 
 __all__ = [
     "filter_training",
@@ -12,5 +12,5 @@ __all__ = [
     "prepare_datasets",
     "prepare_loso_datasets",
     "TrainData",
-    "EPNData",
+    "EmgDataset",
 ]

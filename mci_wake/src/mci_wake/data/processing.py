@@ -6,7 +6,7 @@ from numpy import typing as npt
 
 import libemg
 from mci_wake.data.normalization import Normalize
-from mci_wake.data.types import EmgData, EmgDataset
+from mci_wake.data.types import EmgDataset
 from mci_wake.neural.classifier import TrainData
 
 

@@ -4,7 +4,7 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict
 
-from mci_wake.data.types import EmgData, PydanticF64Array, EmgDataset
+from mci_wake.data.types import PydanticF64Array, EmgDataset
 
 
 class Normalize(BaseModel):

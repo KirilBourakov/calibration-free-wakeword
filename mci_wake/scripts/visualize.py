@@ -3,7 +3,7 @@ Dash Web Application for visualizing EPN and DISCO EMG datasets,
 as well as testing and visualizing Hanning cross-fade stitching on arbitrary/random data.
 
 Run with:
-    python scripts/visualize_dash.py
+    python scripts/visualize.py
 """
 
 import sys
@@ -27,9 +27,8 @@ if str(SRC_DIR) not in sys.path:
 
 from mci_wake.stitching.hanning import stitch
 from mci_wake.data.normalization import Normalize
-from mci_wake.data.loaders import load_disco_adls, split_disco_adls
-from mci_wake.data.types import EPN_DATA, ADL_DATA, EmgData
-from mci_wake.data import EPNData, gesture_mapping, load_epn_data
+from mci_wake.data.loaders import load_disco_adls, split_disco_adls, load_epn_data
+from mci_wake.data.types import EPN_DATA, ADL_DATA, EmgDataset, gesture_mapping
 
 # Inverse gesture map
 GESTURE_NAMES = {v: k for k, v in gesture_mapping.items()}
@@ -52,11 +51,11 @@ CHANNEL_COLORS = [
 # Data Loading & Fallback Generation
 # ==========================================
 
-_EPN_CACHE = None
-_DISCO_CACHE = None
+_EPN_CACHE: EmgDataset | None = None
+_DISCO_CACHE: EmgDataset | None = None
 
 
-def get_epn_data_cached():
+def get_epn_data_cached() -> EmgDataset:
     """Loads EPN dataset from pkl/json or generates synthetic fallback if missing."""
     global _EPN_CACHE
     if _EPN_CACHE is not None:
@@ -68,9 +67,10 @@ def get_epn_data_cached():
             print(f"Loading EPN dataset from {pkl_path}...")
             with open(pkl_path, 'rb') as f:
                 epn = pickle.load(f)
-            _EPN_CACHE = (epn.emg, epn.labels, epn.subject_ids)
-            print(f"Loaded EPN: {len(epn.emg)} samples.")
-            return _EPN_CACHE
+            if isinstance(epn, EmgDataset):
+                _EPN_CACHE = epn
+                print(f"Loaded EPN: {len(epn)} samples.")
+                return _EPN_CACHE
         except Exception as e:
             print(f"Warning: Failed to load dataset.pkl: {e}")
 
@@ -78,38 +78,48 @@ def get_epn_data_cached():
     try:
         print("Attempting to load raw EPN dataset...")
         epn = load_epn_data(EPN_DATA)
-        _EPN_CACHE = (epn.emg, epn.labels, epn.subject_ids)
+        _EPN_CACHE = epn
         return _EPN_CACHE
     except Exception as e:
         print(f"Notice: EPN dataset not available on disk ({e}). Using synthetic EPN data.")
 
     # Generate Synthetic EPN Data
     rng = np.random.default_rng(42)
-    emg_data = {'training': [], 'testing': []}
-    labels = {'training': [], 'testing': []}
-    epn_subjects = {'training': [], 'testing': []}
+    emg_list: list[np.ndarray] = []
+    labels_list: list[int] = []
+    subjects_list: list[int] = []
 
-    for split in ['training', 'testing']:
-        n_subs = 10 if split == 'training' else 3
-        for sub in range(1, n_subs + 1):
-            for g_id in range(6):
-                for rep in range(3):
-                    T = rng.integers(150, 350)
-                    t = np.linspace(0, 2 * np.pi, T)
-                    # Base noise + gesture burst in center
-                    sig = rng.normal(0, 0.1, size=(T, 8))
-                    if g_id > 0:
-                        burst = np.sin(t * (g_id + 1))[:, None] * np.exp(-((t - np.pi) ** 2) / 2)
-                        sig += burst * (0.5 + 0.3 * rng.random(8))
-                    emg_data[split].append(sig)
-                    labels[split].append(g_id)
-                    epn_subjects[split].append(sub)
+    for sub in range(1, 14):
+        for g_id in range(6):
+            for rep in range(3):
+                T = rng.integers(150, 350)
+                t = np.linspace(0, 2 * np.pi, T)
+                # Base noise + gesture burst in center
+                sig = rng.normal(0, 0.1, size=(T, 8)).astype(np.float32)
+                if g_id > 0:
+                    burst = np.sin(t * (g_id + 1))[:, None] * np.exp(-((t - np.pi) ** 2) / 2)
+                    sig += (burst * (0.5 + 0.3 * rng.random(8))).astype(np.float32)
+                emg_list.append(sig)
+                labels_list.append(g_id)
+                subjects_list.append(sub)
 
-    _EPN_CACHE = (emg_data, labels, epn_subjects)
+    _EPN_CACHE = EmgDataset(
+        data=emg_list,
+        labels=np.array(labels_list, dtype=np.int32),
+        subjects=np.array(subjects_list, dtype=np.int32),
+        is_normalized=False,
+    )
     return _EPN_CACHE
 
 
-def get_disco_data_cached():
+def get_epn_split(split: str) -> EmgDataset:
+    """Returns train or test partition of EPN dataset."""
+    epn = get_epn_data_cached()
+    train_epn, test_epn = epn.split(test_percentage=0.1, by_subject=True, random_seed=42)
+    return train_epn if split == 'training' else test_epn
+
+
+def get_disco_data_cached() -> EmgDataset:
     """Loads DISCO dataset from disk or generates synthetic fallback if missing."""
     global _DISCO_CACHE
     if _DISCO_CACHE is not None:
@@ -117,10 +127,10 @@ def get_disco_data_cached():
 
     try:
         print(f"Loading DISCO dataset from {ADL_DATA}...")
-        recs, subs = load_disco_adls(ADL_DATA)
-        if len(recs) > 0:
-            _DISCO_CACHE = (recs, subs)
-            print(f"Loaded DISCO: {len(recs)} recordings across {len(np.unique(subs))} subjects.")
+        disco = load_disco_adls(ADL_DATA)
+        if len(disco) > 0:
+            _DISCO_CACHE = disco
+            print(f"Loaded DISCO: {len(disco)} recordings across {len(np.unique(disco.subjects))} subjects.")
             return _DISCO_CACHE
     except Exception as e:
         print(f"Notice: DISCO dataset load notice ({e}).")
@@ -128,24 +138,29 @@ def get_disco_data_cached():
     # Synthetic fallback
     print("Generating synthetic DISCO dataset...")
     rng = np.random.default_rng(123)
-    recs = []
-    subs = []
+    recs: list[np.ndarray] = []
+    subs: list[int] = []
     for s in range(1, 16):
         for r in range(4):
             T = rng.integers(500, 1000)
             t = np.linspace(0, 10, T)
-            noise = rng.normal(0, 0.15, size=(T, 8))
-            drift = 0.2 * np.sin(0.5 * t)[:, None]
+            noise = rng.normal(0, 0.15, size=(T, 8)).astype(np.float32)
+            drift = (0.2 * np.sin(0.5 * t)[:, None]).astype(np.float32)
             recs.append(noise + drift)
             subs.append(s)
 
-    _DISCO_CACHE = (recs, np.array(subs, dtype=int))
+    _DISCO_CACHE = EmgDataset(
+        data=recs,
+        labels=np.zeros(len(recs), dtype=np.int32),
+        subjects=np.array(subs, dtype=np.int32),
+        is_normalized=False,
+    )
     return _DISCO_CACHE
 
 
 # Pre-load data structures
-epn_emg, epn_labels, epn_subs = get_epn_data_cached()
-disco_recs, disco_subs = get_disco_data_cached()
+_epn_initial = get_epn_data_cached()
+_disco_initial = get_disco_data_cached()
 
 
 # ==========================================
@@ -360,8 +375,8 @@ tab_disco_layout = html.Div([
                         html.Label("Subject ID", style=label_style),
                         dcc.Dropdown(
                             id="disco-subject-dd",
-                            options=[{'label': f"Subject S{s}", 'value': s} for s in sorted(list(set(disco_subs)))],
-                            value=sorted(list(set(disco_subs)))[0] if len(disco_subs) > 0 else 1,
+                            options=[{'label': f"Subject S{s}", 'value': s} for s in sorted(list(set(_disco_initial.subjects.tolist())))],
+                            value=sorted(list(set(_disco_initial.subjects.tolist())))[0] if len(_disco_initial) > 0 else 1,
                             clearable=False,
                             style={'color': '#000'},
                         ),
@@ -597,9 +612,8 @@ app.layout = html.Div(
     Input("epn-split-radio", "value"),
 )
 def update_epn_subjects(split):
-    emg_dict, labels_dict, subs_dict = get_epn_data_cached()
-    subs = subs_dict.get(split, [])
-    unique_subs = sorted(list(set(subs)))
+    epn = get_epn_split(split)
+    unique_subs = sorted(list(set(epn.subjects.tolist())))
     options = [{'label': f"Subject {s}", 'value': s} for s in unique_subs]
     default_val = unique_subs[0] if len(unique_subs) > 0 else 1
     return options, default_val
@@ -613,22 +627,17 @@ def update_epn_subjects(split):
     Input("epn-gesture-dd", "value"),
 )
 def update_epn_samples(split, subject_id, gesture_id):
-    emg_dict, labels_dict, subs_dict = get_epn_data_cached()
-    emg_list = emg_dict.get(split, [])
-    lab_list = labels_dict.get(split, [])
-    sub_list = subs_dict.get(split, [])
-
-    matching_indices = []
-    for idx, (sub, lab) in enumerate(zip(sub_list, lab_list)):
-        if sub == subject_id:
-            if gesture_id == -1 or lab == gesture_id:
-                matching_indices.append(idx)
+    epn = get_epn_split(split)
+    matching_indices = [
+        idx for idx, (sub, lab) in enumerate(zip(epn.subjects.tolist(), epn.labels.tolist()))
+        if sub == subject_id and (gesture_id == -1 or lab == gesture_id)
+    ]
 
     if not matching_indices:
         return [{'label': 'No matching samples', 'value': -1}], -1
 
     options = [
-        {'label': f"Sample #{i} ({GESTURE_NAMES.get(lab_list[i], 'Unknown')}, {len(emg_list[i])} pts)", 'value': i}
+        {'label': f"Sample #{i} ({GESTURE_NAMES.get(int(epn.labels[i]), 'Unknown')}, {len(epn.data[i])} pts)", 'value': i}
         for i in matching_indices[:100]  # Limit dropdown length for speed
     ]
     return options, options[0]['value']
@@ -649,18 +658,17 @@ def update_epn_view(split, sample_idx, norm_chk, selected_channels):
         empty_fig.update_layout(paper_bgcolor=DARK_STYLE['card_bg'], plot_bgcolor=DARK_STYLE['card_bg'])
         return html.Div("No sample selected"), empty_fig, empty_fig
 
-    emg_dict, labels_dict, subs_dict = get_epn_data_cached()
-    raw_sample = emg_dict[split][sample_idx]
-    label_id = labels_dict[split][sample_idx]
-    sub_id = subs_dict[split][sample_idx]
-
-    emg_item = raw_sample if isinstance(raw_sample, EmgData) else EmgData(data=raw_sample)
+    epn = get_epn_split(split)
+    sample_ds = epn[sample_idx:sample_idx + 1]
 
     if 'norm' in norm_chk:
-        normalizer = Normalize.create([emg_item])
-        data = normalizer(emg_item).data
+        normalizer = Normalize.create(sample_ds)
+        data = normalizer(sample_ds).data[0]
     else:
-        data = emg_item.data
+        data = sample_ds.data[0]
+
+    label_id = int(sample_ds.labels[0])
+    sub_id = int(sample_ds.subjects[0])
 
     T, n_ch = data.shape
     duration_ms = (T / 200.0) * 1000.0  # Assume 200 Hz Myo armband sampling rate
@@ -734,9 +742,9 @@ def update_epn_view(split, sample_idx, norm_chk, selected_channels):
     Input("disco-subject-dd", "value"),
 )
 def update_disco_recordings(subject_id):
-    recs, subs = get_disco_data_cached()
-    indices = [i for i, s in enumerate(subs) if s == subject_id]
-    options = [{'label': f"Recording #{i+1} ({len(recs[i])} samples)", 'value': i} for i in indices]
+    disco = get_disco_data_cached()
+    indices = [i for i, s in enumerate(disco.subjects.tolist()) if s == subject_id]
+    options = [{'label': f"Recording #{i+1} ({len(disco.data[i])} samples)", 'value': i} for i in indices]
     default_val = indices[0] if len(indices) > 0 else 0
     return options, default_val
 
@@ -751,8 +759,8 @@ def toggle_disco_window_controls(mode, rec_idx):
     if mode != 'windowed' or rec_idx is None:
         return {'display': 'none'}, 10
 
-    recs, subs = get_disco_data_cached()
-    data = recs[rec_idx]
+    disco = get_disco_data_cached()
+    data = disco.data[rec_idx]
     # Estimate window count with min length 150, step 50
     n_windows = max(1, (len(data) - 150) // 50)
     return control_group_style, n_windows - 1
@@ -773,10 +781,8 @@ def update_disco_view(subject_id, rec_idx, view_mode, win_idx, norm_chk, selecte
         empty_fig = go.Figure()
         return html.Div("No recording selected"), empty_fig
 
-    recs, subs = get_disco_data_cached()
-    raw_sample = recs[rec_idx]
-    emg_item = raw_sample if isinstance(raw_sample, EmgData) else EmgData(data=raw_sample)
-    data = emg_item.data
+    disco = get_disco_data_cached()
+    data = disco.data[rec_idx]
 
     if view_mode == 'windowed':
         # Slice out window
@@ -785,8 +791,14 @@ def update_disco_view(subject_id, rec_idx, view_mode, win_idx, norm_chk, selecte
         data = data[start_i:end_i]
 
     if 'norm' in norm_chk:
-        normalizer = Normalize.create([EmgData(data=data)])
-        data = normalizer(EmgData(data=data)).data
+        sample_ds = EmgDataset(
+            data=[data],
+            labels=np.zeros(1, dtype=np.int32),
+            subjects=np.array([subject_id], dtype=np.int32),
+            is_normalized=False,
+        )
+        normalizer = Normalize.create(sample_ds)
+        data = normalizer(sample_ds).data[0]
 
     T, n_ch = data.shape
     rms_per_ch = np.sqrt(np.mean(data ** 2, axis=0))
@@ -859,34 +871,31 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
     seed = (n_clicks * 1337 + n_segs * 42 + seg_len + overlap_samples) % 1000000
     rng = np.random.default_rng(seed)
 
-    raw_segments = []
-    segment_labels = []
+    raw_segments: list[np.ndarray] = []
+    segment_labels: list[str] = []
 
     # Generate or fetch segment slices
     for i in range(n_segs):
         length = seg_len + rng.integers(-10, 15)  # slight variation in segment length
 
         if source_type == 'noise':
-            arr = rng.normal(0, 0.5, size=(length, 8))
+            arr = rng.normal(0, 0.5, size=(length, 8)).astype(np.float32)
             label = f"Noise Seg {i+1}"
         elif source_type == 'sine':
             t = np.linspace(0, 4 * np.pi, length)
             freq = (i + 1) * 1.5
-            arr = np.zeros((length, 8))
+            arr = np.zeros((length, 8), dtype=np.float32)
             for ch in range(8):
-                arr[:, ch] = np.sin(t * freq + ch * 0.5) * (0.8 + 0.4 * np.cos(t))
+                arr[:, ch] = (np.sin(t * freq + ch * 0.5) * (0.8 + 0.4 * np.cos(t))).astype(np.float32)
             label = f"Sine Seg {i+1} ({freq:.1f}Hz)"
         elif source_type == 'walk':
-            arr = np.cumsum(rng.normal(0, 0.1, size=(length, 8)), axis=0)
+            arr = np.cumsum(rng.normal(0, 0.1, size=(length, 8)), axis=0).astype(np.float32)
             label = f"Walk Seg {i+1}"
         elif source_type == 'epn':
-            emg_dict, labels_dict, _ = get_epn_data_cached()
-            train_emg = emg_dict['training'] if isinstance(emg_dict, dict) else emg_dict
-            train_labs = labels_dict['training'] if isinstance(labels_dict, dict) else labels_dict
-            idx = rng.integers(0, len(train_emg))
-            sample = train_emg[idx]
-            sample_data = sample.data if isinstance(sample, EmgData) else sample
-            g_name = GESTURE_NAMES.get(train_labs[idx], 'Gesture')
+            epn = get_epn_data_cached()
+            idx = rng.integers(0, len(epn))
+            sample_data = epn.data[idx]
+            g_name = GESTURE_NAMES.get(int(epn.labels[idx]), 'Gesture')
             if len(sample_data) > length:
                 st = rng.integers(0, len(sample_data) - length)
                 arr = sample_data[st:st + length]
@@ -894,10 +903,9 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
                 arr = sample_data
             label = f"EPN ({g_name}) Seg {i+1}"
         elif source_type == 'disco':
-            recs, _ = get_disco_data_cached()
-            idx = rng.integers(0, len(recs))
-            sample = recs[idx]
-            sample_data = sample.data if isinstance(sample, EmgData) else sample
+            disco = get_disco_data_cached()
+            idx = rng.integers(0, len(disco))
+            sample_data = disco.data[idx]
             if len(sample_data) > length:
                 st = rng.integers(0, len(sample_data) - length)
                 arr = sample_data[st:st + length]
@@ -906,18 +914,15 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
             label = f"DISCO Noise Seg {i+1}"
         elif source_type == 'mixed':
             if i % 2 == 0:
-                emg_dict, labels_dict, _ = get_epn_data_cached()
-                train_emg = emg_dict['training'] if isinstance(emg_dict, dict) else emg_dict
-                idx = rng.integers(0, len(train_emg))
-                sample = train_emg[idx]
-                sample_data = sample.data if isinstance(sample, EmgData) else sample
+                epn = get_epn_data_cached()
+                idx = rng.integers(0, len(epn))
+                sample_data = epn.data[idx]
                 arr = sample_data[:length]
                 label = f"EPN Gesture Seg {i+1}"
             else:
-                recs, _ = get_disco_data_cached()
-                idx = rng.integers(0, len(recs))
-                sample = recs[idx]
-                sample_data = sample.data if isinstance(sample, EmgData) else sample
+                disco = get_disco_data_cached()
+                idx = rng.integers(0, len(disco))
+                sample_data = disco.data[idx]
                 arr = sample_data[:length]
                 label = f"DISCO Noise Seg {i+1}"
 
@@ -929,7 +934,7 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
         elif arr.shape[1] > 8:
             arr = arr[:, :8]
 
-        raw_segments.append(EmgData(data=arr, is_normalized=True))
+        raw_segments.append(arr.astype(np.float32))
         segment_labels.append(label)
 
     # Perform Hanning cross-fade stitch
@@ -937,7 +942,7 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
     stitched_arr = stitch(raw_segments, overlap_samples=overlap_samples)
     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
-    total_input_len = sum(len(s.data) for s in raw_segments)
+    total_input_len = sum(len(s) for s in raw_segments)
     actual_stitched_len = len(stitched_arr)
     expected_overlap_loss = (n_segs - 1) * overlap_samples
 
@@ -945,7 +950,7 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
     seam_boundaries = []
     curr_pos = 0
     for i in range(len(raw_segments) - 1):
-        seg_len_curr = len(raw_segments[i].data)
+        seg_len_curr = len(raw_segments[i])
         seam_start = curr_pos + seg_len_curr - overlap_samples
         seam_end = seam_start + overlap_samples
         seam_boundaries.append((seam_start, seam_end))
@@ -1020,8 +1025,8 @@ def update_stitching_view(source_type, n_segs, seg_len, overlap_samples, selecte
         inspect_ch = 0 if selected_ch == -1 else selected_ch
 
         # Extract boundary math
-        seg_out = raw_segments[seam_idx].data
-        seg_in = raw_segments[seam_idx + 1].data
+        seg_out = raw_segments[seam_idx]
+        seg_in = raw_segments[seam_idx + 1]
 
         overlap = min(len(seg_out), len(seg_in), overlap_samples)
         theta = np.linspace(0, np.pi / 2, overlap)

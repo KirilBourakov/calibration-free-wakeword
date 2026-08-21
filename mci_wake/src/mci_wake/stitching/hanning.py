@@ -1,7 +1,6 @@
 import numpy as np
 import numpy.typing as npt
 
-from mci_wake.data.types import EmgData
 
 
 def stitch_into_buffer(
@@ -69,7 +68,7 @@ def stitch(
     total_len = len(data[0])
     for arr in data[1:]:
         overlap = min(total_len, len(arr), overlap_samples)
-        assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, result: {total_len}, next_arr: {len(arr.data)}"
+        assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, result: {total_len}, next_arr: {len(arr)}"
         total_len += len(arr) - overlap
 
     shape = (total_len,) + data[0].shape[1:]

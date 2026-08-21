@@ -115,23 +115,6 @@ class EmgDataset:
             n_train = int(len(self) * (1.0 - test_percentage))
             return self[:n_train], self[n_train:]
 
-@dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
-class EmgData:
-    data: npt.NDArray[np.floating]
-    is_normalized: bool = False
-
-@dataclass(config=ConfigDict(arbitrary_types_allowed=True))
-class EPNData:
-    emg: List[EmgData] = Field(default_factory=list)
-    imu: List[Any] = Field(default_factory=list)
-    labels: List[Any] = Field(default_factory=list)
-    myo_labels: List[Any] = Field(default_factory=list)
-    subject_ids: List[int] = Field(default_factory=list)
-
-    def __iter__(self):
-        return iter((self.emg, self.imu, self.labels, self.myo_labels, self.subject_ids))
-
-
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
 
 # dir setup

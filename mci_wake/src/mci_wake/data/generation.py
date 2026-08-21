@@ -2,7 +2,7 @@ import numpy as np
 
 import numpy.typing as npt
 
-from mci_wake.data.types import EmgData, EmgDataset
+from mci_wake.data.types import EmgDataset
 
 
 def generate_training_data(
