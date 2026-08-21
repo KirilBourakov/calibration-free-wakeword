@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from mci_wake.data.types import EmgData, EmgDataset
+from mci_wake.data.types import EmgDataset
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
 from mci_wake.stitching.hanning import stitch, stitch_into_buffer

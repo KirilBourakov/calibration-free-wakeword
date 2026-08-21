@@ -1,5 +1,5 @@
 import os
-from typing import List, Any, Dict, Annotated, overload
+from typing import List, Any, Dict, Annotated, overload, Optional
 
 import numpy as np
 from numpy import typing as npt
@@ -65,6 +65,55 @@ class EmgDataset:
             subjects=np.concatenate((self.subjects, other.subjects)),
             is_normalized=self.is_normalized
         )
+
+    def split(
+        self,
+        test_percentage: float = 0.1,
+        by_subject: bool = True,
+        test_subject_ids: Optional[list[int] | npt.NDArray[np.integer]] = None,
+        random_seed: Optional[int] = None,
+    ) -> tuple["EmgDataset", "EmgDataset"]:
+        """Splits the dataset into train and test partitions.
+
+        Args:
+            test_percentage: Fraction of data (or subjects) to allocate to the test set. Defaults to 0.1.
+            by_subject: If True, splits by unique subject IDs to prevent data leakage. If False, splits by sample count.
+            test_subject_ids: Explicit list of subject IDs to hold out for testing. If provided, overrides test_percentage.
+            random_seed: Optional seed for reproducible subject/sample selection.
+
+        Returns:
+            tuple[EmgDataset, EmgDataset]: (train_dataset, test_dataset)
+        """
+        if by_subject:
+            unique_subjects = np.unique(self.subjects)
+            if test_subject_ids is None:
+                if random_seed is not None:
+                    rng = np.random.default_rng(random_seed)
+                    n_test = max(1, int(len(unique_subjects) * test_percentage))
+                    test_subject_ids = list(rng.choice(unique_subjects, size=n_test, replace=False))
+                else:
+                    n_test = max(1, int(len(unique_subjects) * test_percentage))
+                    test_subject_ids = list(unique_subjects[:n_test])
+
+            test_mask = np.isin(self.subjects, test_subject_ids)
+            train_mask = ~test_mask
+
+            train = EmgDataset(
+                data=[d for d, m in zip(self.data, train_mask) if m],
+                labels=self.labels[train_mask],
+                subjects=self.subjects[train_mask],
+                is_normalized=self.is_normalized,
+            )
+            test = EmgDataset(
+                data=[d for d, m in zip(self.data, test_mask) if m],
+                labels=self.labels[test_mask],
+                subjects=self.subjects[test_mask],
+                is_normalized=self.is_normalized,
+            )
+            return train, test
+        else:
+            n_train = int(len(self) * (1.0 - test_percentage))
+            return self[:n_train], self[n_train:]
 
 @dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))
 class EmgData:

@@ -18,16 +18,8 @@ def load_raw_data(presplit_adl=True) -> tuple[EmgDataset, EmgDataset]:
         adl = split_disco_adls(adl)
     epn = load_epn_data(EPN_DATA)
 
-    epn_emg = np.array([EmgData(data=d, is_normalized=epn.is_normalized) for d in epn.data], dtype='object')
-    epn_labels = epn.labels
-    epn_subjects = epn.subjects
-
-    adl_emg = np.array([EmgData(data=d, is_normalized=adl.is_normalized) for d in adl.data], dtype='object')
-    adl_subjects = adl.subjects
-
-    n_subs = len(np.unique(epn_subjects))
-    print(f"Loaded {len(epn_emg)} gesture samples from EPN dataset across {n_subs} subjects.")
-    print(f"Loaded {len(adl_emg)} ADL noise segments.")
+    print(f"Loaded {len(adl)} gesture samples from EPN dataset across {len(np.unique(epn.subjects))} subjects.")
+    print(f"Loaded {len(epn)} ADL noise segments.")
 
     return epn, adl
 

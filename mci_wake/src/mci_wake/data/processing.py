@@ -122,14 +122,8 @@ def prepare_datasets(
     """
     print("Warning: prepare_loso_datasets recommended.")
 
-    n_emg_train = int(len(emg_data) * train_split)
-    n_adl_train = int(len(adl_data) * train_split)
-
-    train_emg_raw = emg_data[:n_emg_train]
-    test_emg_raw = emg_data[-int(len(emg_data) * test_split):]
-
-    adl_train_raw = adl_data[:n_adl_train]
-    adl_test_raw = adl_data[-int(len(adl_data) * test_split):]
+    train_emg_raw, test_emg_raw = emg_data.split(test_percentage=test_split, by_subject=False)
+    adl_train_raw, adl_test_raw = adl_data.split(test_percentage=test_split, by_subject=False)
 
     # Fit Normalize strictly on training partition
     normalizer = Normalize.create(train_emg_raw.combine(adl_train_raw))
@@ -180,32 +174,16 @@ def prepare_loso_datasets(
     Returns:
         Tuple containing (train, test, train_subject_ids, normalizer).
     """
-    unique_subjects = np.unique(emg_data.subjects)
-    if test_subject_ids is None:
-        rng = np.random.default_rng(random_seed)
-        n_test = max(1, int(len(unique_subjects) * test_subject_ratio))
-        test_subject_ids = list(rng.choice(unique_subjects, size=n_test, replace=False))
-
-    test_mask = np.isin(emg_data.subjects, test_subject_ids)
-    train_mask = ~test_mask
-
-    train_emg_raw = EmgDataset(
-        data=[d for d, m in zip(emg_data.data, train_mask) if m],
-        labels=emg_data.labels[train_mask],
-        subjects=emg_data.subjects[train_mask],
-        is_normalized=emg_data.is_normalized,
+    train_emg_raw, test_emg_raw = emg_data.split(
+        test_percentage=test_subject_ratio,
+        by_subject=True,
+        test_subject_ids=test_subject_ids,
+        random_seed=random_seed,
     )
-    test_emg_raw = EmgDataset(
-        data=[d for d, m in zip(emg_data.data, test_mask) if m],
-        labels=emg_data.labels[test_mask],
-        subjects=emg_data.subjects[test_mask],
-        is_normalized=emg_data.is_normalized,
+    adl_train_raw, adl_test_raw = adl_data.split(
+        test_percentage=test_subject_ratio,
+        by_subject=False,
     )
-
-    # Split ADL noise data proportionally
-    n_adl_train = int(len(adl_data) * (1.0 - test_subject_ratio))
-    adl_train_raw = adl_data[:n_adl_train]
-    adl_test_raw = adl_data[n_adl_train:]
 
     # Fit Normalize strictly on training partition
     normalizer = Normalize.create(train_emg_raw.combine(adl_train_raw))
@@ -225,6 +203,7 @@ def prepare_loso_datasets(
     train = train_emg_feats.combine(adl_train_feats)
     test = test_emg_feats.combine(adl_test_feats)
 
+    held_out_subjects = np.unique(test_emg_raw.subjects).tolist()
     data = TrainData()
     for s in np.unique(train_emg_raw.subjects):
         item = s.item() if hasattr(s, "item") else s
@@ -232,7 +211,7 @@ def prepare_loso_datasets(
     data.disco = [f"S{s.item() if hasattr(s, 'item') else s}" for s in np.unique(adl_train_raw.subjects)]
 
     print(f"--- LOSO (Leave-One-Subject-Out) Dataset Split ---")
-    print(f"Held-out test subject IDs ({len(test_subject_ids)} subjects): {test_subject_ids}")
+    print(f"Held-out test subject IDs ({len(held_out_subjects)} subjects): {held_out_subjects}")
     print(f"Training EPN subjects ({len(data.emg)} subjects): {data.emg}")
     print(f"Training ADL subjects ({len(data.disco)} subjects): {data.disco}")
     print(f"Final training set: {len(train)} samples ({len(train_emg_feats)} gestures + {len(adl_train_feats)} ADL)")
