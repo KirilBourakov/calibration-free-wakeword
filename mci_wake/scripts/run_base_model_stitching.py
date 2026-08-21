@@ -45,17 +45,16 @@ def main():
 
     # 2. Load EMG & ADL dataset
     print("Loading raw EMG and ADL datasets...")
-    emg_data_all, labels_all, _, adl_data, _ = load_raw_data()
+    emg, adl = load_raw_data()
 
-    normalizer = Normalize.create(list(emg_data_all) + list(adl_data))
-    emg_data_norm = normalizer(list(emg_data_all))
-    adl_data_norm = normalizer(list(adl_data))
+    normalizer = Normalize.create(emg.combine(adl))
+    emg_data_norm = normalizer(emg)
+    adl_data_norm = normalizer(adl)
 
     # 3. Instantiate StitchingDataHandler
     print(f"Initializing StitchingDataHandler with gestures={gestures}, probabilities={probabilities}...")
     handler = StitchingDataHandler(
         emg_data=emg_data_norm,
-        emg_labels=labels_all,
         adl_data=adl_data_norm,
         gestures=gestures,
         probabilities=probabilities,

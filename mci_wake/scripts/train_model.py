@@ -11,10 +11,10 @@ def main() -> None:
     TEST_SUBJECT_RATIO: float = 0.1  # Hold out 10% of subjects for unseen test evaluation
 
     # 1. Load data alongside subject IDs
-    emg_data_all, labels_all, subject_ids_all, adl_data, adl_ids = load_raw_data()
+    emg, adl  = load_raw_data()
 
     # 2. Preprocess
-    emg_data_all = preprocess_nm_data(emg_data_all, labels_all)
+    emg = preprocess_nm_data(emg)
 
     # 3. Prepare features and splits using LOSO with safe normalization
     train_emg, train_labels, test_emg, test_labels, train_subject_ids, normalizer = prepare_loso_datasets(

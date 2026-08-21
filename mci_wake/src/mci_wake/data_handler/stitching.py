@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from mci_wake.data.types import EmgData
+from mci_wake.data.types import EmgData, EmgDataset
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
 from mci_wake.stitching.hanning import stitch, stitch_into_buffer
@@ -27,9 +27,8 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
     def __init__(
         self,
-        emg_data: list[EmgData],
-        emg_labels: npt.NDArray[Any] | list[Any],
-        adl_data: list[EmgData],
+        emg_data: EmgDataset,
+        adl_data: EmgDataset,
         gestures: list[str] | list[int],
         sampling_rate: float = 200.0,
         probabilities: tuple[float, float, float] = (0.5, 0.5, 0.0),
@@ -40,10 +39,11 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
     ):
         assert len(probabilities) == 3, "probabilities must be a tuple of 3 floats"
         assert abs(sum(probabilities) - 1.0) < 1e-5, "probabilities must sum to 1.0"
+        assert emg_data.is_normalized
+        assert adl_data.is_normalized
 
         # Pre-convert datasets to float64 ndarrays to avoid repeated conversions during streaming
         self.emg_data = emg_data
-        self.emg_labels = emg_labels
         self.adl_data = adl_data
         self.sampling_rate = sampling_rate
         self.probabilities = probabilities
@@ -216,10 +216,10 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             end_len = self._buffer_len
             self.target_regions.append(TargetRegion(start=start_len, end=end_len))
 
-    def _get_next_segments(self) -> tuple[list[EmgData], bool]:
+    def _get_next_segments(self) -> tuple[list[npt.NDArray[np.float32]], bool]:
         """Get the next set of segments."""
         p_adl, p_emg, _ = self.probabilities
-        segments: list[EmgData] = []
+        segments: list[npt.NDArray[np.float32]] = []
         r = random.random()
         is_test_case = False
 
@@ -236,13 +236,13 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 ]
                 if matching:
                     idx = random.choice(matching)
-                    segments.append(self.emg_data[idx])
+                    segments.append(self.emg_data.data[idx])
             else:
                 idx = random.randint(0, len(self.emg_data) - 1)
-                segments.append(self.emg_data[idx])
+                segments.append(self.emg_data.data[idx])
                 if len(self.gesture_sequence) > 1:
                     idx_adl = random.randint(0, len(self.adl_data) - 1)
-                    segments.append(self.adl_data[idx_adl])
+                    segments.append(self.adl_data.data[idx_adl])
 
         else:
             # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-1.25s no-gesture gaps
@@ -256,7 +256,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 matching = self._label_indices.get(g_id, [])
                 assert matching, f"No EMG data found matching gesture {g_id}"
                 idx = random.choice(matching)
-                segments.append(self.emg_data[idx])
+                segments.append(self.emg_data.data[idx])
 
                 if i < len(self.gesture_sequence) - 1:
                     no_g_seg = self._get_no_gesture_segment(max_duration_sec=0.75)
@@ -275,7 +275,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 new_buffer[:self._buffer_len] = self._buffer[:self._buffer_len]
             self._buffer = new_buffer
 
-    def _get_no_gesture_segment(self, max_duration_sec: float = 1.25) -> EmgData | None:
+    def _get_no_gesture_segment(self, max_duration_sec: float = 1.25) -> npt.NDArray[np.float32] | None:
         """Extract a random slice of rest/no-gesture EMG data up to max_duration_sec."""
         max_samples = int(max_duration_sec * self.sampling_rate)
         if max_samples <= 0:
@@ -287,13 +287,11 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         # Try noGesture (label 0) in emg_data
         matching = self._label_indices.get(0, [])
         assert matching, "Cannot _get_no_gesture_segment: matching is empty"
-        rec = self.emg_data[random.choice(matching)]
-        if len(rec.data) >= num_samples:
+        rec = self.emg_data.data[random.choice(matching)]
+        if len(rec) >= num_samples:
             start_i = random.randint(0, len(rec.data) - num_samples)
-            d = rec.data[start_i : start_i + num_samples]
-        else:
-            d = rec.data[:num_samples]
-        return EmgData(d, is_normalized=rec.is_normalized)
+            return rec[start_i : start_i + num_samples]
+        return rec[:num_samples]
 
     def __str__(self) -> str:
         stitching_regions = [(r.end - r.start) / self.sampling_rate for r in self.target_regions] if self.target_regions else []

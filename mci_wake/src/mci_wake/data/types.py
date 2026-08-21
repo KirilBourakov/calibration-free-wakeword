@@ -1,5 +1,5 @@
 import os
-from typing import List, Any, Dict, Annotated
+from typing import List, Any, Dict, Annotated, overload
 
 import numpy as np
 from numpy import typing as npt
@@ -22,6 +22,56 @@ PydanticF64Array = Annotated[
     BeforeValidator(_validate_ndarray),
     PlainSerializer(_serialize_ndarray, return_type=list),
 ]
+
+
+@dataclass(config=ConfigDict(arbitrary_types_allowed=True), frozen=True)
+class EmgDataset:
+    data: list[npt.NDArray[np.float32]]  # Each element has shape (T_i, channels)
+    labels: npt.NDArray[np.int32]  # Shape: (N,)
+    subjects: npt.NDArray[np.int32]  # Shape: (N,)
+    is_normalized: bool = False
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __iter__(self):
+        return iter((self.data, self.labels, self.subjects))
+
+    @overload
+    def __getitem__(self, idx: int) -> tuple[npt.NDArray[np.float32], np.int32, np.int32]: ...
+    @overload
+    def __getitem__(self, idx: slice) -> "EmgDataset": ...
+    def __getitem__(self, idx: int | slice) -> "EmgDataset | tuple[npt.NDArray[np.float32], np.int32, np.int32]":
+        """Allows indexing dataset[0] and slicing dataset[:10]"""
+        # slicing
+        if isinstance(idx, slice):
+            return EmgDataset(
+                data=self.data[idx],
+                labels=self.labels[idx],
+                subjects=self.subjects[idx],
+                is_normalized=self.is_normalized
+            )
+        # single integer
+        elif isinstance(idx, int):
+            return self.data[idx], self.labels[idx], self.subjects[idx]
+        else:
+            raise TypeError(f"Invalid argument type: {type(idx)}")
+
+    def combine(self, other: "EmgDataset") -> "EmgDataset":
+        assert other.is_normalized == self.is_normalized, "Cannot combine EmgDatasets with different normalized states."
+        return EmgDataset(
+            data=self.data + other.data,
+            labels=np.concatenate((self.labels, other.labels)),
+            subjects=np.concatenate((self.subjects, other.subjects)),
+            is_normalized=self.is_normalized
+        )
+
+@dataclass
+class WindowedEmgDataset:
+    data: npt.NDArray[np.float32]        # Shape: (N, W, C) contiguous array
+    labels: npt.NDArray[np.int64]        # Shape: (N,)
+    subjects: npt.NDArray[np.int64]      # Shape: (N,)
+    is_normalized: bool = False
 
 
 @dataclass(frozen=True, config=ConfigDict(arbitrary_types_allowed=True))

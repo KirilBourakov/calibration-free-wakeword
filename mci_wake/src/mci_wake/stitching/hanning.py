@@ -7,7 +7,7 @@ from mci_wake.data.types import EmgData
 def stitch_into_buffer(
     buffer: npt.NDArray[np.floating],
     buffer_len: int,
-    segment: EmgData,
+    segment: npt.NDArray[np.floating],
     overlap_samples: int = 15,
 ) -> int:
     """
@@ -23,18 +23,16 @@ def stitch_into_buffer(
     Returns:
         New buffer length after stitching.
     """
-    assert segment.is_normalized
-
-    seg_len = len(segment.data)
+    seg_len = len(segment)
     if buffer_len == 0:
-        buffer[:seg_len] = segment.data
+        buffer[:seg_len] = segment
         return seg_len
 
     overlap = min(buffer_len, seg_len, overlap_samples)
     assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, buffer_len: {buffer_len}, seg_len: {seg_len}"
 
     theta = np.linspace(0, np.pi / 2, overlap)
-    if segment.data.ndim > 1:
+    if segment.ndim > 1:
         w_out = (np.cos(theta) ** 2)[:, None]
         w_in = (np.sin(theta) ** 2)[:, None]
     else:
@@ -42,16 +40,16 @@ def stitch_into_buffer(
         w_in = np.sin(theta) ** 2
 
     seam_out = buffer[buffer_len - overlap : buffer_len]
-    seam_in = segment.data[:overlap]
+    seam_in = segment[:overlap]
     buffer[buffer_len - overlap : buffer_len] = (seam_out * w_out) + (seam_in * w_in)
 
     rem_len = seg_len - overlap
-    buffer[buffer_len : buffer_len + rem_len] = segment.data[overlap:]
+    buffer[buffer_len : buffer_len + rem_len] = segment[overlap:]
     return buffer_len + rem_len
 
 
 def stitch(
-    data: list[EmgData],
+    data: list[npt.NDArray[np.floating]],
     overlap_samples: int = 15,
 ) -> npt.NDArray[np.floating]:
     """
@@ -68,14 +66,14 @@ def stitch(
     """
     assert data, "No data provided to stitch"
 
-    total_len = len(data[0].data)
+    total_len = len(data[0])
     for arr in data[1:]:
-        overlap = min(total_len, len(arr.data), overlap_samples)
+        overlap = min(total_len, len(arr), overlap_samples)
         assert overlap > 0, f"Invalid size: overlap sample: {overlap_samples}, result: {total_len}, next_arr: {len(arr.data)}"
-        total_len += len(arr.data) - overlap
+        total_len += len(arr) - overlap
 
-    shape = (total_len,) + data[0].data.shape[1:]
-    result = np.empty(shape, dtype=data[0].data.dtype)
+    shape = (total_len,) + data[0].shape[1:]
+    result = np.empty(shape, dtype=data[0].dtype)
 
     curr_len = 0
     for arr in data:

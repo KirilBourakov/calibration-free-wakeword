@@ -1,10 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import overload, Sequence
 import numpy as np
 import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict
 
-from mci_wake.data.types import EmgData, PydanticF64Array
+from mci_wake.data.types import EmgData, PydanticF64Array, EmgDataset
 
 
 class Normalize(BaseModel):
@@ -15,15 +15,14 @@ class Normalize(BaseModel):
     std: PydanticF64Array
 
     @classmethod
-    def create(cls, emg: Sequence[EmgData], eps: float = 1e-3) -> "Normalize":
-        assert all(not d.is_normalized for d in emg), "Cannot fit on normalized data."
+    def create(cls, data: EmgDataset, eps: float = 1e-3) -> "Normalize":
+        assert not data.is_normalized, "Cannot fit on normalized data"
 
         total_count = 0
         global_mean = None
         global_m2 = None
 
-        for d in emg:
-            chunk = d.data
+        for chunk, _, _ in data:
             if chunk.size != 0:
                 chunk_count = chunk.shape[0]
 
@@ -56,20 +55,13 @@ class Normalize(BaseModel):
             std=global_std.astype(np.float32)
         )
 
-    @overload
-    def __call__(self, emg: EmgData) -> EmgData: ...
-    @overload
-    def __call__(self, emg: list[EmgData]) -> list[EmgData]: ...
-    def __call__(self, emg: list[EmgData] | EmgData) -> list[EmgData] | EmgData:
-        items = [emg] if isinstance(emg, EmgData) else emg
+    def __call__(self, emg: EmgDataset) -> EmgDataset:
+        if emg.is_normalized:
+            return emg
 
-        transformed = []
-        for d in items:
-            if not d.is_normalized:
-                # Broadcasting automatically maps the (C,) mean/std arrays across the (T, C) data array
-                normalized_data = (d.data - self.mean) / self.std
-                transformed.append(EmgData(data=normalized_data, is_normalized=True))
-            else:
-                transformed.append(EmgData(data=d.data.copy(), is_normalized=True))
+        data: list[npt.NDArray[np.float32]] = []
+        for d in emg.data:
+            normalized_data = (d - self.mean) / self.std
+            data.append(normalized_data)
 
-        return transformed[0] if isinstance(emg, EmgData) else transformed
+        return replace(emg, data=data)
