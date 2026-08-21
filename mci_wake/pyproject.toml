@@ -23,3 +23,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+mci_wake = ["py.typed"]
+
+[tool.mypy]
+mypy_path = "src"
