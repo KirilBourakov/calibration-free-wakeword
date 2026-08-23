@@ -25,6 +25,7 @@ def main() -> None:
 
     # 1. Load data alongside subject IDs
     emg, adl = load_raw_data()
+    emg = preprocess_nm_data(emg)
     emg = replace(emg, labels=np.where(emg.labels == target_original_label, 1, 0))
     
     print(f"Mapping details:")
@@ -32,9 +33,6 @@ def main() -> None:
     print(f"  - All other gestures and noGesture -> 0")
     print(f"  - Total positive target samples: {np.sum(emg.labels == 1)}")
     print(f"  - Total negative samples (other gestures + noGesture): {np.sum(emg.labels == 0)}")
-
-    # 2. Preprocess 'No Motion' (noGesture) data
-    emg_data_all = preprocess_nm_data(emg)
 
     # 3. Prepare features and splits using LOSO with safe normalization
     train, test, ids, normalizer = prepare_loso_datasets(

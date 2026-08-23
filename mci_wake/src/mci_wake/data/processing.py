@@ -4,7 +4,6 @@ from typing import Union, Any, Optional, Tuple, List, Dict
 import numpy as np
 from numpy import typing as npt
 
-import libemg
 from mci_wake.data.normalization import Normalize
 from mci_wake.data.types import EmgDataset
 from mci_wake.neural.classifier import TrainData
@@ -244,13 +243,15 @@ def get_features(
     if force_normalize and not data.is_normalized:
         raise ValueError("EMG data must be normalized prior to feature extraction.")
 
+    from libemg.utils import get_windows
+    from libemg.feature_extractor import FeatureExtractor
+
     windowed_data = [
-        libemg.utils.get_windows(d, window_size, window_inc).astype(np.float32)
+        get_windows(d, window_size, window_inc).astype(np.float32)
         for d in data.data
     ]
 
     if feats is not None:
-        from libemg.feature_extractor import FeatureExtractor
         fe = FeatureExtractor()
         extracted = [
             fe.extract_features(feats, w, array=True, feature_dic=feat_dic or {})
