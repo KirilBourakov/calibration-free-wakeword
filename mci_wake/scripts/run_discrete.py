@@ -15,15 +15,11 @@ if __name__ == "__main__":
     
     adapter = TypeAdapter(DiscreteClassifierConfig)
 
-    lightning_model = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_2\checkpoints\best-model-epoch=05-val_acc=0.98.ckpt"
-    )
+    lightning_model = DiscreteLightningModule.load_from_checkpoint(r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_4\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt")
     model1 = lightning_model.internals
 
     lightning_model = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_3\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
-    )
-
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_5\checkpoints\best-model-epoch=07-val_acc=0.99.ckpt")
     model2 = lightning_model.internals
 
     discrete = WakeDetect(CompatibleOnlineDataHandler(), 10, 5, [model1, model2])
