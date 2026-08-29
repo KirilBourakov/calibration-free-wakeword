@@ -5,7 +5,7 @@ import torch
 
 from mci_wake.data import filter_training, load_raw_data
 from mci_wake.data.normalization import Normalize
-from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
+from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig, TrainData
 from mci_wake.neural.lightning_module import DiscreteLightningModule
 from mci_wake.orchestration.wake_detect import WakeDetect
 from mci_wake.data_handler.stitching import StitchingDataHandler
@@ -13,10 +13,10 @@ from mci_wake.data_handler.stitching import StitchingDataHandler
 
 def get_models() -> tuple[DiscreteClassifier, ...]:
     model1 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_2\checkpoints\best-model-epoch=05-val_acc=0.98.ckpt"
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_4\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
     )
     model2 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_3\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_5\checkpoints\best-model-epoch=07-val_acc=0.99.ckpt"
     )
     return model1.internals, model2.internals
 
@@ -27,7 +27,7 @@ def main():
     args = parser.parse_args()
 
     # Allowlist custom classes for safe unpickling in PyTorch 2.6+
-    torch.serialization.add_safe_globals([DiscreteClassifierConfig, DiscreteClassifier])
+    torch.serialization.add_safe_globals([DiscreteClassifierConfig, DiscreteClassifier, TrainData])
 
     models = get_models()
     emg, adl = filter_training(
