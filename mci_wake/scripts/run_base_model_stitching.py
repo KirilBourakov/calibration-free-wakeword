@@ -10,6 +10,10 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
+from mci_wake.transform.highpass import HighPassFilter
+from mci_wake.transform.rest_normalization import RestNormalizer
+from mci_wake.transform.transform import Transform
+
 # Ensure workspace src is on Python path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 SRC_DIR = ROOT_DIR / "src"
@@ -17,7 +21,6 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from mci_wake.data import gesture_mapping, load_raw_data
-from mci_wake.data.normalization import Normalize
 from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
 from mci_wake.neural.io import load
 from mci_wake.data_handler.stitching import StitchingDataHandler
@@ -47,15 +50,17 @@ def main():
     print("Loading raw EMG and ADL datasets...")
     emg, adl = load_raw_data()
 
-    normalizer = Normalize.create(emg.combine(adl))
-    emg_data_norm = normalizer(emg)
-    adl_data_norm = normalizer(adl)
+    transforms = Transform(HighPassFilter(), RestNormalizer())
+    transforms.fit(emg)
+
+    emg_data_transformed = transforms(emg)
+    adl_data_transformed = transforms(adl)
 
     # 3. Instantiate StitchingDataHandler
     print(f"Initializing StitchingDataHandler with gestures={gestures}, probabilities={probabilities}...")
     handler = StitchingDataHandler(
-        emg_data=emg_data_norm,
-        adl_data=adl_data_norm,
+        emg_data=emg_data_transformed,
+        adl_data=adl_data_transformed,
         gestures=gestures,
         probabilities=probabilities,
         realtime=False,

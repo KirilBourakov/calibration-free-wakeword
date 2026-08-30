@@ -11,6 +11,7 @@ WINDOW_SIZE: int = 10
 INCREMENT_SIZE: int = 5
 TEST_SUBJECT_RATIO: float = 0.1
 
+# TODO: not done
 def main():
     print(f"Target sequence: {TARGET_SEQUENCE}")
 

@@ -4,7 +4,6 @@ from typing import Union, Any, Optional, Tuple, List, Dict
 import numpy as np
 from numpy import typing as npt
 
-from mci_wake.data.normalization import Normalize
 from mci_wake.data.types import EmgDataset
 from mci_wake.neural.classifier import TrainData
 
@@ -103,17 +102,15 @@ def prepare_datasets(
     adl_data: EmgDataset,
     window_size: int,
     increment_size: int,
-    train_split: float = 0.95,
     test_split: float = 0.05
-) -> Tuple[EmgDataset, EmgDataset, Normalize]:
-    """Extracts features and splits the data into training and testing sets proportionally with safe normalization.
+) -> Tuple[EmgDataset, EmgDataset]:
+    """Extracts features and splits the data into training and testing sets.
 
     Args:
         emg_data: The complete set of gesture EMG data samples.
         adl_data: The ADL EMG data samples.
         window_size: The size of the sliding window for feature extraction.
         increment_size: The increment step for the sliding window.
-        train_split: The proportion of data to use for training. Defaults to 0.95.
         test_split: The proportion of data to use for testing. Defaults to 0.05.
 
     Returns:
@@ -124,20 +121,11 @@ def prepare_datasets(
     train_emg_raw, test_emg_raw = emg_data.split(test_percentage=test_split, by_subject=False)
     adl_train_raw, adl_test_raw = adl_data.split(test_percentage=test_split, by_subject=False)
 
-    # Fit Normalize strictly on training partition
-    normalizer = Normalize.create(train_emg_raw.combine(adl_train_raw))
-
-    # Apply normalizer
-    train_emg_norm = normalizer(train_emg_raw)
-    adl_train_norm = normalizer(adl_train_raw)
-    test_emg_norm = normalizer(test_emg_raw)
-    adl_test_norm = normalizer(adl_test_raw)
-
     # Extract features
-    train_emg_feats = get_features(train_emg_norm, window_size, increment_size)
-    test_emg_feats = get_features(test_emg_norm, window_size, increment_size)
-    adl_train_feats = get_features(adl_train_norm, window_size, increment_size)
-    adl_test_feats = get_features(adl_test_norm, window_size, increment_size)
+    train_emg_feats = get_features(train_emg_raw, window_size, increment_size)
+    test_emg_feats = get_features(test_emg_raw, window_size, increment_size)
+    adl_train_feats = get_features(adl_train_raw, window_size, increment_size)
+    adl_test_feats = get_features(adl_test_raw, window_size, increment_size)
 
     train = train_emg_feats.combine(adl_train_feats)
     test = test_emg_feats.combine(adl_test_feats)
@@ -145,7 +133,7 @@ def prepare_datasets(
     print(f"Final training set: {len(train)} samples ({len(train_emg_feats)} gestures + {len(adl_train_feats)} ADL)")
     print(f"Final testing set: {len(test)} samples ({len(test_emg_feats)} gestures + {len(adl_test_feats)} ADL)")
 
-    return train, test, normalizer
+    return train, test
 
 def prepare_loso_datasets(
     emg_data: EmgDataset,
@@ -155,11 +143,8 @@ def prepare_loso_datasets(
     test_subject_ids: Optional[List[int]] = None,
     test_subject_ratio: float = 0.1,
     random_seed: int = 42,
-) -> Tuple[EmgDataset, EmgDataset, TrainData, Normalize]:
-    """Extracts features and splits data using Leave-One-Subject-Out (LOSO) cross-validation with safe normalization.
-
-    Ensures that test subjects' gesture data is strictly isolated from the training set,
-    and that normalization parameters are fitted exclusively on training subjects.
+) -> Tuple[EmgDataset, EmgDataset, TrainData]:
+    """Extracts features and splits data using Leave-One-Subject-Out (LOSO) cross-validation.
 
     Args:
         emg_data: Complete set of gesture EMG data samples.
@@ -184,20 +169,11 @@ def prepare_loso_datasets(
         by_subject=False,
     )
 
-    # Fit Normalize strictly on training partition
-    normalizer = Normalize.create(train_emg_raw.combine(adl_train_raw))
-
-    # Apply normalizer
-    train_emg_norm = normalizer(train_emg_raw)
-    adl_train_norm = normalizer(adl_train_raw)
-    test_emg_norm = normalizer(test_emg_raw)
-    adl_test_norm = normalizer(adl_test_raw)
-
     # Extract features
-    train_emg_feats = get_features(train_emg_norm, window_size, increment_size)
-    test_emg_feats = get_features(test_emg_norm, window_size, increment_size)
-    adl_train_feats = get_features(adl_train_norm, window_size, increment_size)
-    adl_test_feats = get_features(adl_test_norm, window_size, increment_size)
+    train_emg_feats = get_features(train_emg_raw, window_size, increment_size)
+    test_emg_feats = get_features(test_emg_raw, window_size, increment_size)
+    adl_train_feats = get_features(adl_train_raw, window_size, increment_size)
+    adl_test_feats = get_features(adl_test_raw, window_size, increment_size)
 
     train = train_emg_feats.combine(adl_train_feats)
     test = test_emg_feats.combine(adl_test_feats)
@@ -216,7 +192,7 @@ def prepare_loso_datasets(
     print(f"Final training set: {len(train)} samples ({len(train_emg_feats)} gestures + {len(adl_train_feats)} ADL)")
     print(f"Final testing set:  {len(test)} samples ({len(test_emg_feats)} gestures + {len(adl_test_feats)} ADL)")
 
-    return train, test, data, normalizer
+    return train, test, data
 
 
 def get_features(

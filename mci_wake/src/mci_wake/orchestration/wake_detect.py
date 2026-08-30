@@ -7,9 +7,10 @@ import statistics
 
 from libemg.data_handler import OnlineDataHandler
 
-from mci_wake.data.normalization import Normalize
 from mci_wake.data_handler.abstract import AbstractDataHandler, OfflineCapableAbstractDataHandler
 from mci_wake.neural.classifier import DiscreteClassifier
+from mci_wake.transform.transform import Transform
+
 
 class ModelState:
     def __init__(
@@ -18,14 +19,14 @@ class ModelState:
         window_size: int,
         increment: int,
         buffer_size: int,
-        normalize: Normalize | None = None,
+        transforms: Transform | None = None,
     ):
         assert model.config.n_classes == 2
         self.model = model
         self.window_size = window_size
         self.increment = increment
         self.buffer_size = buffer_size
-        self.normalize = normalize
+        self.transforms = transforms
         self.buffer: list[int] = []
 
     def next_step(self, odh: AbstractDataHandler, size: int):
@@ -48,7 +49,7 @@ class ModelState:
         fe = FeatureExtractor()
         data = np.array([
             get_windows(
-                self.normalize(d) if (len(d) > 0 and self.normalize is not None) else d,
+                self.transforms(d) if (len(d) > 0 and self.transforms is not None) else d,
                 self.window_size,
                 self.increment
             )
@@ -101,7 +102,7 @@ class WakeDetect:
         min_template_size=150,
         sequence_timeout = 2.0,
         debug=True,
-        normalize: Normalize | None = None,
+        transforms: Transform | None = None,
         verbose=True
     ):
         self.odh = odh
@@ -109,7 +110,7 @@ class WakeDetect:
         self.increment = increment
         self.buffer_size = buffer
         self.verbose = verbose
-        self.models = [ModelState(m, window_size, increment, buffer, normalize=normalize) for m in models]
+        self.models = [ModelState(m, window_size, increment, buffer, transforms=transforms) for m in models]
         self.template_size = template_size
         self.min_template_size = min_template_size
         self.sequence_timeout = sequence_timeout

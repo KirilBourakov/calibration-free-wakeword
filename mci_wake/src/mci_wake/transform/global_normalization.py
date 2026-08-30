@@ -5,24 +5,25 @@ import numpy.typing as npt
 from pydantic import BaseModel, ConfigDict
 
 from mci_wake.data.types import PydanticF64Array, EmgDataset
+from mci_wake.transform.base import AbstractTransform
 
 
-class Normalize(BaseModel):
+class GlobalStatsNormalize(AbstractTransform):
     # Allow ndarray types inside Pydantic
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     mean: PydanticF64Array
     std: PydanticF64Array
+    eps: float = 1E-3
 
-    @classmethod
-    def create(cls, data: EmgDataset, eps: float = 1e-3) -> "Normalize":
-        assert not data.is_normalized, "Cannot fit on normalized data"
+    def fit(self, emg: EmgDataset) -> None:
+        assert not emg.is_normalized, "Cannot fit on normalized data"
 
         total_count = 0
         global_mean = None
         global_m2 = None
 
-        for chunk, _, _ in data:
+        for chunk, _, _ in emg:
             if chunk.size != 0:
                 chunk_count = chunk.shape[0]
 
@@ -48,12 +49,12 @@ class Normalize(BaseModel):
         assert total_count != 0 and global_mean is not None and global_m2 is not None
 
         global_var = global_m2 / total_count
-        global_std = np.maximum(np.sqrt(global_var), eps)
+        global_std = np.maximum(np.sqrt(global_var), self.eps)
 
-        return cls(
-            mean=global_mean.astype(np.float32),
-            std=global_std.astype(np.float32)
-        )
+
+        self.mean=global_mean.astype(np.float32)
+        self.std=global_std.astype(np.float32)
+
 
     def __call__(self, emg: EmgDataset | npt.NDArray[np.floating]) -> EmgDataset | npt.NDArray[np.float32]:
         if isinstance(emg, np.ndarray):

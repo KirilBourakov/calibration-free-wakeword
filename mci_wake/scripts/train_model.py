@@ -1,6 +1,9 @@
 from mci_wake.data import load_raw_data, preprocess_nm_data, prepare_loso_datasets
 from mci_wake.neural.training import train_model
 from mci_wake.neural.classifier import DiscreteClassifierConfig
+from mci_wake.transform.highpass import HighPassFilter
+from mci_wake.transform.rest_normalization import RestNormalizer
+from mci_wake.transform.transform import Transform
 
 
 def main() -> None:
@@ -11,13 +14,18 @@ def main() -> None:
     TEST_SUBJECT_RATIO: float = 0.1  # Hold out 10% of subjects for unseen test evaluation
 
     # 1. Load data alongside subject IDs
+    # TODO: data leakage - fitting transforms on test data (minor)
     emg, adl  = load_raw_data()
+    transforms = Transform(HighPassFilter(), RestNormalizer())
+    transforms.fit(emg)
+    emg = transforms(emg)
+    adl = transforms(adl)
 
     # 2. Preprocess
     emg = preprocess_nm_data(emg)
 
-    # 3. Prepare features and splits using LOSO with safe normalization
-    train, test, train_subject_ids, normalizer = prepare_loso_datasets(
+    # 3. Prepare features and splits using LOSO
+    train, test, train_subject_ids = prepare_loso_datasets(
         emg, adl,
         WINDOW_SIZE,
         INCREMENT_SIZE,
