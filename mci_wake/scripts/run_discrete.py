@@ -19,14 +19,14 @@ if __name__ == "__main__":
     transforms.fit(emg)
 
     lightning_model = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_1\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
     )
     model1 = lightning_model.internals
 
-    # lightning_model = DiscreteLightningModule.load_from_checkpoint(
-    #     r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_5\checkpoints\best-model-epoch=07-val_acc=0.99.ckpt"
-    # )
-    # model2 = lightning_model.internals
+    lightning_model = DiscreteLightningModule.load_from_checkpoint(
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
+    )
+    model2 = lightning_model.internals
 
-    discrete = WakeDetect(CompatibleOnlineDataHandler(), 10, 5, [model1], transforms=transforms)
+    discrete = WakeDetect(CompatibleOnlineDataHandler(), 10, 5, [model1, model2], transforms=transforms)
     discrete.run()

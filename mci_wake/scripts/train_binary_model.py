@@ -11,7 +11,7 @@ from mci_wake.transform.transform import Transform
 
 # Target gesture to recognize. Everything else will be classified as 'other' (0).
 # Available gestures in dataset: 'fist', 'waveIn', 'waveOut', 'open', 'pinch'
-TARGET_GESTURE = 'fist'
+TARGET_GESTURE = 'pinch'
 
 def main() -> None:
     """Main execution pipeline for training the binary gesture model using Leave-One-Subject-Out (LOSO)."""

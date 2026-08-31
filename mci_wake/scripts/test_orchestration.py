@@ -15,10 +15,10 @@ from mci_wake.transform.transform import Transform
 
 def get_models() -> tuple[DiscreteClassifier, ...]:
     model1 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_4\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_1\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
     )
     model2 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_5\checkpoints\best-model-epoch=07-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
     )
     return model1.internals, model2.internals
 
