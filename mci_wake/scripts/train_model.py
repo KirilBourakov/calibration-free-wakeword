@@ -16,11 +16,6 @@ from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
 
-# Target gesture to recognize (e.g. 'pinch', 'fist').
-# Set to None for multi-class classification (6 classes).
-TARGET_GESTURE: Optional[str] = None
-
-
 def parse_gesture_labels(
     emg: EmgDataset, target_gesture: Optional[str] = None
 ) -> Tuple[EmgDataset, int]:
@@ -51,6 +46,7 @@ def main() -> None:
     WINDOW_SIZE: int = 10
     INCREMENT_SIZE: int = 5
     TEST_SUBJECT_RATIO: float = 0.1  # Hold out 10% of subjects for unseen test evaluation
+    TARGET_GESTURE: str | None = 'fist'
 
     # 1. Load data alongside subject IDs
     emg, adl = load_raw_data()
@@ -73,7 +69,10 @@ def main() -> None:
     )
 
     # 4. Train classifier
-    model_config = DiscreteClassifierConfig(n_classes=n_classes)
+    model_config = DiscreteClassifierConfig(
+        n_classes=n_classes,
+        gestures=[TARGET_GESTURE] if TARGET_GESTURE else list(gesture_mapping.keys()),
+    )
     train_model(train, test, model_config, customers=ids)
 
 

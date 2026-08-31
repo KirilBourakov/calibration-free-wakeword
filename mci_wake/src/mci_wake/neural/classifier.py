@@ -31,6 +31,7 @@ class DiscreteClassifierConfig:
     conv_out_channels: list[int] = Field(default_factory=lambda: [16, 32, 64])
     lr: float = 1e-3
     customers: TrainData = Field(default_factory=TrainData)
+    gestures: list[str] = Field(default_factory=list)
 
     @property
     def file_name(self):
