@@ -127,6 +127,6 @@ class EmgDataset:
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
 
 # dir setup
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-EPN_DATA = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", "..", "other", "EMG-EPN612"))
-ADL_DATA = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "..", "..", "other", "DiscoDataset"))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+EPN_DATA = os.path.join(ROOT_DIR, "data", "EMG-EPN612")
+ADL_DATA = os.path.join(ROOT_DIR, "data", "DiscoDataset")

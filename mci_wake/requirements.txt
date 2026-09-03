@@ -1,7 +1,0 @@
-torch
-lightning
-numpy
-pydantic
-pygame
-pyautogui
-# Note: libemg is installed locally from parent directory (e.g. pip install -e ../libemg)

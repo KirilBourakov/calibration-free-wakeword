@@ -1,9 +1,0 @@
-torch
-lightning
-numpy
-pydantic
-pygame
-pyautogui
-
-[dev]
-pytest

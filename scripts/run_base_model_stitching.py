@@ -28,7 +28,7 @@ from libemg.utils import get_windows
 
 GESTURE_NAMES = {v: k for k, v in gesture_mapping.items()}
 
-DEFAULT_MODEL_PATH = ROOT_DIR / "other" / "models" / "base"
+DEFAULT_MODEL_PATH = ROOT_DIR / "data" / "models" / "base"
 
 gestures = ['pinch']
 probabilities = (0.8, 0, 0.2)

@@ -7,6 +7,7 @@ import random
 import numpy as np 
 import time
 import pickle
+from pathlib import Path
 
 EVALUATION = True
 
@@ -101,7 +102,8 @@ class Evaluation:
                 font = pygame.font.Font(None, 50)
                 text = font.render(label, True, (0, 0, 0))
                 screen.blit(text, (200, 10))
-                img = pygame.image.load('other/Images/' + self.classes[id] + '.png')
+                img_path = Path(__file__).resolve().parent.parent / "data" / "Images" / f"{self.classes[id]}.png"
+                img = pygame.image.load(str(img_path))
                 screen.blit(img,(75,65))
                 self.log['trial'].append(self.trial)
             else:
