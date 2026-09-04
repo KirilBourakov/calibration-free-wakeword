@@ -6,11 +6,10 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from mci_wake.data.types import EmgDataset
+from mci_wake.data.types import EmgDataset, gesture_mapping
 from mci_wake.data_handler.abstract import OfflineCapableAbstractDataHandler
 from mci_wake.data_handler.types import DataHandlerOutput, RecordingTriggers, TriggerStats
 from mci_wake.stitching.hanning import stitch, stitch_into_buffer
-from mci_wake.data import gesture_mapping
 
 
 @dataclass
@@ -245,25 +244,81 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                     segments.append(self.adl_data.data[idx_adl])
 
         else:
-            # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-1.25s no-gesture gaps
-            # Inserts [empty] [gesture 1] [empty] [gesture 2] ... [gesture n]
+            # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-0.75s no-gesture gaps
             is_test_case = True
-            leading_no_g = self._get_no_gesture_segment(max_duration_sec=0.25)
-            if leading_no_g is not None and len(leading_no_g) > 0:
-                segments.append(leading_no_g)
-
-            for i, g_id in enumerate(self.gesture_sequence):
-                matching = self._label_indices.get(g_id, [])
-                assert matching, f"No EMG data found matching gesture {g_id}"
-                idx = random.choice(matching)
-                segments.append(self.emg_data.data[idx])
-
-                if i < len(self.gesture_sequence) - 1:
-                    no_g_seg = self._get_no_gesture_segment(max_duration_sec=0.75)
-                    if no_g_seg is not None and len(no_g_seg) > 0:
-                        segments.append(no_g_seg)
+            segments = self.get_sequence_segments(self.gesture_sequence)
 
         return segments, is_test_case
+
+    def get_sequence_segments(
+        self, sequence: list[int] | list[str] | None = None
+    ) -> list[npt.NDArray[np.float32]]:
+        """Builds a list of gesture segments separated by realistic no-gesture gaps."""
+        seq =  (
+            self.gesture_sequence
+            if sequence is None
+            else [
+                gesture_mapping[g] if isinstance(g, str) and g in gesture_mapping else int(g)
+                for g in sequence
+            ]
+        )
+        segments: list[npt.NDArray[np.float32]] = []
+        leading_no_g = self._get_no_gesture_segment(max_duration_sec=0.25)
+        if leading_no_g is not None and len(leading_no_g) > 0:
+            segments.append(leading_no_g)
+
+        for i, g_id in enumerate(seq):
+            matching = self._label_indices.get(g_id, [])
+            assert matching, f"No EMG data found matching gesture {g_id}"
+            idx = random.choice(matching)
+            segments.append(self.emg_data.data[idx])
+
+            if i < len(seq) - 1:
+                no_g_seg = self._get_no_gesture_segment(max_duration_sec=0.75)
+                if no_g_seg is not None and len(no_g_seg) > 0:
+                    segments.append(no_g_seg)
+
+        return segments
+
+    def stitch_sequence(
+        self, sequence: list[int] | list[str] | None = None
+    ) -> npt.NDArray[np.float32]:
+        """Stitches a gesture sequence into a single continuous array using constant-power Hanning cross-fading."""
+        segments = self.get_sequence_segments(sequence)
+        return stitch(segments, overlap_samples=self.overlap_samples).astype(np.float32)
+
+    def generate_positive(self) -> npt.NDArray[np.float32]:
+        """Generates a synthetic positive sequence trial."""
+        return self.stitch_sequence(self.gesture_sequence)
+
+    def generate_negative(self) -> npt.NDArray[np.float32]:
+        """Generates a hard negative sequence trial (reversed order, prefix mismatch, other gestures, or ADL)."""
+        other_gestures = [
+            l for l in self._label_indices.keys()
+            if l not in self.gesture_sequence and l != 0 and len(self._label_indices[l]) > 0
+        ]
+        r = random.random()
+
+        if r < 0.35 and len(self.gesture_sequence) > 1:
+            # Reversed target sequence (e.g. [fist, pinch] instead of [pinch, fist])
+            return self.stitch_sequence(list(reversed(self.gesture_sequence)))
+        elif r < 0.70 and other_gestures:
+            # Prefix mismatch with another gesture
+            neg_seq = [self.gesture_sequence[0], random.choice(other_gestures)]
+            return self.stitch_sequence(neg_seq)
+        elif len(self.adl_data) > 0 and r < 0.85:
+            # ADL noise recording
+            idx = random.randint(0, len(self.adl_data) - 1)
+            return self.adl_data.data[idx]
+        elif other_gestures:
+            # Other gestures sequence
+            neg_seq = [random.choice(other_gestures) for _ in self.gesture_sequence]
+            return self.stitch_sequence(neg_seq)
+        else:
+            seg = self._get_no_gesture_segment(max_duration_sec=1.5)
+            if seg is not None and len(seg) >= self.overlap_samples:
+                return seg
+            return self.emg_data.data[0]
 
     def _ensure_capacity(self, needed_additional_samples: int) -> None:
         """Make sure the buffer has at least the needed_additional_samples free"""
