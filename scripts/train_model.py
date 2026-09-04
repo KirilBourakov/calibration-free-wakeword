@@ -5,10 +5,11 @@ import numpy as np
 
 from mci_wake.data import (
     EmgDataset,
+    TrainData,
     gesture_mapping,
+    get_features,
     load_raw_data,
     preprocess_nm_data,
-    prepare_loso_datasets,
 )
 from mci_wake.neural.classifier import DiscreteClassifierConfig
 from mci_wake.neural.training import train_model
@@ -48,27 +49,50 @@ def main() -> None:
     TEST_SUBJECT_RATIO: float = 0.1  # Hold out 10% of subjects for unseen test evaluation
     TARGET_GESTURE: str | None = 'fist'
 
-    # 1. Load data alongside subject IDs
+    # 1. Load data
     emg, adl = load_raw_data()
-    transforms = Transform(HighPassFilter(), RestNormalizer())
-    transforms.fit(emg)
 
     # 2. Preprocess
     emg = preprocess_nm_data(emg)
     emg, n_classes = parse_gesture_labels(emg, TARGET_GESTURE)
 
-    # 3. Prepare features and splits using LOSO
-    emg = transforms(emg)
-    adl = transforms(adl)
-    train, test, ids = prepare_loso_datasets(
-        emg,
-        adl,
-        WINDOW_SIZE,
-        INCREMENT_SIZE,
-        test_subject_ratio=TEST_SUBJECT_RATIO,
+    # 3. Split raw data (LOSO by subject on EMG, sample split on ADL)
+    train_emg, test_emg = emg.split(test_percentage=TEST_SUBJECT_RATIO, by_subject=True)
+    train_adl, test_adl = adl.split(test_percentage=TEST_SUBJECT_RATIO, by_subject=False)
+
+    # 4. Apply transforms (fit strictly on training data to prevent leakage)
+    transforms = Transform(HighPassFilter(), RestNormalizer())
+    transforms.fit(train_emg)
+
+    train_emg = transforms(train_emg)
+    test_emg = transforms(test_emg)
+    train_adl = transforms(train_adl)
+    test_adl = transforms(test_adl)
+
+    # 5. Extract sliding window features & combine
+    train_emg_feats = get_features(train_emg, WINDOW_SIZE, INCREMENT_SIZE)
+    test_emg_feats = get_features(test_emg, WINDOW_SIZE, INCREMENT_SIZE)
+    train_adl_feats = get_features(train_adl, WINDOW_SIZE, INCREMENT_SIZE)
+    test_adl_feats = get_features(test_adl, WINDOW_SIZE, INCREMENT_SIZE)
+
+    train = train_emg_feats.combine(train_adl_feats)
+    test = test_emg_feats.combine(test_adl_feats)
+
+    # 6. Track metadata and summary
+    held_out_subjects = np.unique(test_emg.subjects).tolist()
+    ids = TrainData(
+        emg=[f"user{s.item() if hasattr(s, 'item') else s}" for s in np.unique(train_emg.subjects)],
+        disco=[f"S{s.item() if hasattr(s, 'item') else s}" for s in np.unique(train_adl.subjects)],
     )
 
-    # 4. Train classifier
+    print(f"--- LOSO (Leave-One-Subject-Out) Dataset Split ---")
+    print(f"Held-out test subject IDs ({len(held_out_subjects)} subjects): {held_out_subjects}")
+    print(f"Training EPN subjects ({len(ids.emg)} subjects): {ids.emg}")
+    print(f"Training ADL subjects ({len(ids.disco)} subjects): {ids.disco}")
+    print(f"Final training set: {len(train)} samples ({len(train_emg_feats)} gestures + {len(train_adl_feats)} ADL)")
+    print(f"Final testing set:  {len(test)} samples ({len(test_emg_feats)} gestures + {len(test_adl_feats)} ADL)")
+
+    # 7. Train classifier
     model_config = DiscreteClassifierConfig(
         n_classes=n_classes,
         gestures=[TARGET_GESTURE] if TARGET_GESTURE else list(gesture_mapping.keys()),
