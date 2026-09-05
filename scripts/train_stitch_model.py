@@ -36,8 +36,8 @@ def main() -> None:
     test_adl = transforms(test_adl)
 
     # 4. Generate synthetic positive and hard negative sequence trials
-    train_data = generate_training_data(train_emg, TARGET_SEQUENCE, adl=train_adl)
-    test_data = generate_training_data(test_emg, TARGET_SEQUENCE, adl=test_adl)
+    train_data = generate_training_data(train_emg, train_adl, TARGET_SEQUENCE, n_positive_per_subject=50, n_hard_negative_per_subject=200)
+    test_data = generate_training_data(test_emg, test_adl, TARGET_SEQUENCE)
 
     print(
         f"Train set: {len(train_data)} samples ({np.sum(train_data.labels == 1)} positive, {np.sum(train_data.labels == 0)} negative)"

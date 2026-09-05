@@ -15,12 +15,12 @@ from mci_wake.transform.transform import Transform
 
 def get_models() -> tuple[DiscreteClassifier, ...]:
     model1 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_1\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_2\checkpoints\best-model-epoch=08-val_acc=0.94.ckpt"
     )
-    model2 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
-    )
-    return model1.internals, model2.internals
+    # model2 = DiscreteLightningModule.load_from_checkpoint(
+    #     r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
+    # )
+    return model1.internals, #model2.internals
 
 def main():
     parser = argparse.ArgumentParser(description="Test wake word orchestration.")
