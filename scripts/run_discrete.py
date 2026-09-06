@@ -19,7 +19,7 @@ if __name__ == "__main__":
     transforms.fit(emg)
 
     lightning_model = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_4\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
+        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_5\checkpoints\best-model-epoch=07-val_acc=0.99.ckpt"
     )
     model1 = lightning_model.internals
 

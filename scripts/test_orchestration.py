@@ -15,7 +15,7 @@ from mci_wake.transform.transform import Transform
 
 def get_models() -> tuple[DiscreteClassifier, ...]:
     model1 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_2\checkpoints\best-model-epoch=08-val_acc=0.94.ckpt"
+        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_5\checkpoints\best-model-epoch=07-val_acc=0.99.ckpt"
     )
     # model2 = DiscreteLightningModule.load_from_checkpoint(
     #     r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
@@ -61,12 +61,12 @@ def main():
         stats_thread = threading.Thread(target=print_stats_periodically, daemon=True)
         stats_thread.start()
 
-        discrete = WakeDetect(handler, 10, 5, list(models), transforms=transforms)
+        discrete = WakeDetect(handler, 10, 5, list(models), transforms=None)
         discrete.run()
     else:
         print(f"Running fast simulation for {args.duration} simulated seconds...")
         start_t = time.time()
-        discrete = WakeDetect(handler, 10, 5, list(models), transforms=transforms, verbose=False)
+        discrete = WakeDetect(handler, 10, 5, list(models), transforms=None, verbose=False)
         discrete.run(duration_sec=args.duration)
         elapsed = time.time() - start_t
         print(f"Simulation completed in {elapsed:.2f} seconds wall-clock time!")

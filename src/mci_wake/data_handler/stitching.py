@@ -292,33 +292,49 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         return self.stitch_sequence(self.gesture_sequence)
 
     def generate_negative(self) -> npt.NDArray[np.float32]:
-        """Generates a hard negative sequence trial (reversed order, prefix mismatch, other gestures, or ADL)."""
+        """Generates a hard negative sequence trial (reversed order, prefix mismatch, suffix mismatch,
+        isolated gestures, other gestures, or ADL noise)."""
+        assert len(self.gesture_sequence) > 1, "single gesture sequences not currently supported"
+
         other_gestures = [
             l for l in self._label_indices.keys()
             if l not in self.gesture_sequence and l != 0 and len(self._label_indices[l]) > 0
         ]
         r = random.random()
 
-        if r < 0.35 and len(self.gesture_sequence) > 1:
-            # Reversed target sequence (e.g. [fist, pinch] instead of [pinch, fist])
-            return self.stitch_sequence(list(reversed(self.gesture_sequence)))
-        elif r < 0.70 and other_gestures:
-            # Prefix mismatch with another gesture
-            neg_seq = [self.gesture_sequence[0], random.choice(other_gestures)]
+        if r < 0.20:
+            # 1. Suffix mismatch / wrong prefix (e.g. [other, fist])
+            # Ends in the target suffix gesture, but preceded by another gesture
+            neg_seq = [random.choice(other_gestures)] + self.gesture_sequence[1:]
             return self.stitch_sequence(neg_seq)
-        elif len(self.adl_data) > 0 and r < 0.85:
-            # ADL noise recording
-            idx = random.randint(0, len(self.adl_data) - 1)
-            return self.adl_data.data[idx]
-        elif other_gestures:
-            # Other gestures sequence
+        elif r < 0.35:
+            # 2. rest + suffix
+            return self.stitch_sequence([0, self.gesture_sequence[-1]])
+        elif r < 0.50:
+            # 3. Prefix mismatch / wrong suffix (e.g. [pinch, other])
+            # Starts with the target prefix, but ends with a different gesture
+            neg_seq = self.gesture_sequence[:-1] + [random.choice(other_gestures)]
+            return self.stitch_sequence(neg_seq)
+        elif r < 0.65:
+            # 4. Reversed target sequence (e.g. [fist, pinch])
+            return self.stitch_sequence(list(reversed(self.gesture_sequence)))
+        elif r < 0.75:
+            # 5. Prefix gesture with no end (e.g. [pinch])
+            return self.stitch_sequence(self.gesture_sequence[:-1])
+        elif r < 0.85 and other_gestures:
+            # 6. Other gestures sequence (e.g. [other, other])
             neg_seq = [random.choice(other_gestures) for _ in self.gesture_sequence]
             return self.stitch_sequence(neg_seq)
+        elif len(self.adl_data) > 0 and r < 0.95:
+            # 7. ADL noise recording
+            idx = random.randint(0, len(self.adl_data) - 1)
+            return self.adl_data.data[idx]
         else:
-            seg = self._get_no_gesture_segment(max_duration_sec=1.5)
+            # 8. Rest / no-gesture segment fallback
+            seg = self._get_no_gesture_segment(max_duration_sec=random.random() * 3)
             if seg is not None and len(seg) >= self.overlap_samples:
                 return seg
-            return self.emg_data.data[0]
+            return self.stitch_sequence([random.choice(other_gestures)])
 
     def _ensure_capacity(self, needed_additional_samples: int) -> None:
         """Make sure the buffer has at least the needed_additional_samples free"""
