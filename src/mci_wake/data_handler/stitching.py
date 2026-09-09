@@ -295,46 +295,78 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         """Generates a hard negative sequence trial (reversed order, prefix mismatch, suffix mismatch,
         isolated gestures, other gestures, or ADL noise)."""
         assert len(self.gesture_sequence) > 1, "single gesture sequences not currently supported"
+        assert len(self.adl_data) > 0, "ADL data is required"
 
+        all_gestures = list(self._label_indices.keys())
         other_gestures = [
             l for l in self._label_indices.keys()
             if l not in self.gesture_sequence and l != 0 and len(self._label_indices[l]) > 0
         ]
-        r = random.random()
+        has_other = len(other_gestures) > 0
 
-        if r < 0.20:
-            # 1. Suffix mismatch / wrong prefix (e.g. [other, fist])
-            # Ends in the target suffix gesture, but preceded by another gesture
-            neg_seq = [random.choice(other_gestures)] + self.gesture_sequence[1:]
+        candidates = []
+
+        def add(weight, func):
+            candidates.append((weight, func))
+
+        # 1. Easy case: random single gesture
+        add(0.15, lambda: self.stitch_sequence([random.choice(all_gestures)]))
+
+        # 2. Rest -> true suffix
+        add(0.15, lambda: self.stitch_sequence([0, self.gesture_sequence[-1]]))
+
+        # 3. Wrong-gesture prefix -> true suffix, with a variable-length true suffix
+        if has_other:
+            def wrong_prefix_case():
+                n = len(self.gesture_sequence)
+                split = random.randint(1, n - 1)  # how many leading positions to corrupt
+                corrupted = [random.choice(other_gestures) for _ in range(split)]
+                true_suffix = self.gesture_sequence[split:]
+                return self.stitch_sequence(corrupted + true_suffix)
+            add(0.15, wrong_prefix_case)
+
+        # 4. True prefix -> [nothing / other]
+        def prefix_case():
+            neg_seq = self.gesture_sequence[:-1]
+            if has_other and random.random() < 0.5:
+                neg_seq = neg_seq + [random.choice(other_gestures)]
             return self.stitch_sequence(neg_seq)
-        elif r < 0.35:
-            # 2. rest + suffix
-            return self.stitch_sequence([0, self.gesture_sequence[-1]])
-        elif r < 0.50:
-            # 3. Prefix mismatch / wrong suffix (e.g. [pinch, other])
-            # Starts with the target prefix, but ends with a different gesture
-            neg_seq = self.gesture_sequence[:-1] + [random.choice(other_gestures)]
-            return self.stitch_sequence(neg_seq)
-        elif r < 0.65:
-            # 4. Reversed target sequence (e.g. [fist, pinch])
-            return self.stitch_sequence(list(reversed(self.gesture_sequence)))
-        elif r < 0.75:
-            # 5. Prefix gesture with no end (e.g. [pinch])
-            return self.stitch_sequence(self.gesture_sequence[:-1])
-        elif r < 0.85 and other_gestures:
-            # 6. Other gestures sequence (e.g. [other, other])
-            neg_seq = [random.choice(other_gestures) for _ in self.gesture_sequence]
-            return self.stitch_sequence(neg_seq)
-        elif len(self.adl_data) > 0 and r < 0.95:
-            # 7. ADL noise recording
-            idx = random.randint(0, len(self.adl_data) - 1)
-            return self.adl_data.data[idx]
-        else:
-            # 8. Rest / no-gesture segment fallback
+        add(0.15, prefix_case)
+
+        # 5. Reversed sequence (skip if palindromic -- would just reproduce the positive)
+        reversed_seq = list(reversed(self.gesture_sequence))
+        if reversed_seq != self.gesture_sequence:
+            add(0.15, lambda: self.stitch_sequence(reversed_seq))
+
+        # 6. Near-miss: exactly one position forced to a genuine "other" gesture,
+        # rest drawn from the full label pool (including target labels)
+        if has_other:
+            def near_miss():
+                forced_loc = random.randint(0, len(self.gesture_sequence) - 1)
+                neg_seq = [
+                    random.choice(other_gestures) if i == forced_loc else random.choice(all_gestures)
+                    for i in range(len(self.gesture_sequence))
+                ]
+                return self.stitch_sequence(neg_seq)
+
+            add(0.15, near_miss)
+
+        # 7. ADL noise
+        add(0.20, lambda: self.adl_data.data[random.randint(0, len(self.adl_data) - 1)])
+
+        # 8. Rest/no-gesture fallback
+        def rest_case():
             seg = self._get_no_gesture_segment(max_duration_sec=random.random() * 3)
             if seg is not None and len(seg) >= self.overlap_samples:
                 return seg
-            return self.stitch_sequence([random.choice(other_gestures)])
+            # fallback only within this branch, not a global catch-all anymore
+            return self.stitch_sequence([0, 0])
+
+        add(0.10, rest_case)
+
+        weights = [w for w, _ in candidates]
+        fn = random.choices([f for _, f in candidates], weights=weights, k=1)[0]
+        return fn()
 
     def _ensure_capacity(self, needed_additional_samples: int) -> None:
         """Make sure the buffer has at least the needed_additional_samples free"""
