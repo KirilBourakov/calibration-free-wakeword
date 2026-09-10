@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 from typing import List, Any, Dict, Annotated, overload, Optional
 
 import numpy as np
@@ -31,11 +32,25 @@ class EmgDataset:
     subjects: npt.NDArray[np.int32]  # Shape: (N,)
     is_normalized: bool = False
 
+    @staticmethod
+    def empty() -> "EmgDataset":
+        return EmgDataset(data=[], labels=np.empty(0, dtype=np.int32), subjects=np.empty(0, dtype=np.int32), is_normalized=True)
+
     def __len__(self) -> int:
         return len(self.data)
 
     def __iter__(self):
         return iter(zip(self.data, self.labels, self.subjects))
+
+    def permute(self) -> "EmgDataset":
+        num_total = len(self.data)
+        p = np.random.permutation(num_total)
+        return replace(
+            self,
+            data=[self.data[i] for i in p],
+            labels=np.array(self.labels, dtype=np.int32)[p],
+            subjects=np.array(self.subjects, dtype=np.int32)[p],
+        )
 
     @overload
     def __getitem__(self, idx: int | np.integer) -> tuple[npt.NDArray[np.float32], np.int32, np.int32]:

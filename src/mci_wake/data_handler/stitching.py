@@ -295,7 +295,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         """Generates a hard negative sequence trial (reversed order, prefix mismatch, suffix mismatch,
         isolated gestures, other gestures, or ADL noise)."""
         assert len(self.gesture_sequence) > 1, "single gesture sequences not currently supported"
-        assert len(self.adl_data) > 0, "ADL data is required"
+        assert len(self.adl_data) == 0, "ADL data should be empty"
 
         all_gestures = list(self._label_indices.keys())
         other_gestures = [
@@ -310,7 +310,8 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             candidates.append((weight, func))
 
         # 1. Easy case: random single gesture
-        add(0.15, lambda: self.stitch_sequence([random.choice(all_gestures)]))
+        if len(self.gesture_sequence) > 1:
+            add(0.15, lambda: self.stitch_sequence([random.choice(all_gestures)]))
 
         # 2. Rest -> true suffix
         add(0.15, lambda: self.stitch_sequence([0, self.gesture_sequence[-1]]))
@@ -350,9 +351,6 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
                 return self.stitch_sequence(neg_seq)
 
             add(0.15, near_miss)
-
-        # 7. ADL noise
-        add(0.20, lambda: self.adl_data.data[random.randint(0, len(self.adl_data) - 1)])
 
         # 8. Rest/no-gesture fallback
         def rest_case():

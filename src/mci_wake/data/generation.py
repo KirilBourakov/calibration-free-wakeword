@@ -54,11 +54,12 @@ def generate_training_data(
         mask = cast(np.ndarray, cast(object, emg.subjects == s))
         handler = StitchingDataHandler(
             emg_data=emg[mask],
-            adl_data=adl,
+            adl_data=EmgDataset.empty(),
             gestures=target_sequence,
             sampling_rate=sampling_rate,
             overlap_samples=overlap_samples,
             realtime=False,
+            probabilities=(0.0, 0.0, 1.0)
         )
 
         for _ in range(n_positive_per_subject):
@@ -71,15 +72,9 @@ def generate_training_data(
             labels.append(0)
             subjects.append(int(s))
 
-    num_total = len(trials)
-    p = np.random.permutation(num_total)
-    shuffled_data = [trials[i] for i in p]
-    shuffled_labels = np.array(labels, dtype=np.int32)[p]
-    shuffled_subjects = np.array(subjects, dtype=np.int32)[p]
-
     return EmgDataset(
-        data=shuffled_data,
-        labels=shuffled_labels,
-        subjects=shuffled_subjects,
+        data=trials,
+        labels=np.array(labels, dtype=np.int32),
+        subjects=np.array(subjects, dtype=np.int32),
         is_normalized=emg.is_normalized,
-    )
+    ).combine(adl).permute()
