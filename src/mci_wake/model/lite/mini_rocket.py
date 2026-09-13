@@ -6,6 +6,7 @@ from sktime.transformations.rocket import MiniRocketMultivariate
 from mci_wake.model import AbstractModel
 
 
+# Draft version; non functional
 class MiniRocketModel(AbstractModel):
     """
     Light model: sktime MiniRocketMultivariate transform + linear head.
@@ -52,8 +53,7 @@ class MiniRocketModel(AbstractModel):
         Xt = self.trf.fit_transform(X)      # (n_windows, num_kernels), PPV in [0, 1]
         self.clf.fit(Xt, y)
 
-        # numba JIT warm-up: the first transform call pays a one-time
-        # compile cost of seconds — never pay it inside the live loop
+        # numba JIT warm-up
         self.trf.transform(X[:2])
         self._fitted = True
         return self
