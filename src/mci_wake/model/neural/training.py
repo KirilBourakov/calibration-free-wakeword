@@ -12,10 +12,10 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 
 from mci_wake.data.types import EmgDataset, gesture_mapping
 from mci_wake.model.neural.classifier import (
-    DiscreteClassifier,
     DiscreteClassifierConfig,
+    DiscreteModel,
     TrainData,
-    make_data_loader,
+    make_data_loader, _DiscreteClassifierNet,
 )
 from mci_wake.model.neural.lightning_module import DiscreteLightningModule
 
@@ -25,8 +25,8 @@ def train_model(
     test: EmgDataset,
     model_config: DiscreteClassifierConfig = DiscreteClassifierConfig(),
     customers: TrainData | None = None,
-) -> DiscreteClassifier:
-    """Initializes and trains the DiscreteClassifier using the provided datasets.
+) -> DiscreteModel:
+    """Initializes and trains the DiscreteModel using the provided datasets.
 
     Args:
         train: EmgDataset
@@ -35,8 +35,9 @@ def train_model(
         customers: Optional list of customer/user IDs used for training.
 
     Returns:
-        DiscreteClassifier: The trained classifier instance.
+        DiscreteModel: The trained model instance.
     """
+
     if customers is not None:
         model_config.customers = customers
 
@@ -88,7 +89,8 @@ def train_model(
 
     trainer.fit(model, train_dataloaders=tr_dl, val_dataloaders=te_dl)
 
-    return cast(DiscreteLightningModule, trainer.lightning_module).internals
+    net = cast(DiscreteLightningModule, trainer.lightning_module).internals
+    return DiscreteModel(config=model_config, net=cast(_DiscreteClassifierNet, net))
 
 
 def _generate_training_metadata(

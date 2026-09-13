@@ -1,7 +1,5 @@
 import time
 import winsound
-import statistics
-import numpy as np
 
 from mci_wake.data_handler.abstract import AbstractDataHandler, OfflineCapableAbstractDataHandler
 from mci_wake.model.abstract import AbstractModel

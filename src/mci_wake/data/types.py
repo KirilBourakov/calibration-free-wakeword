@@ -25,6 +25,13 @@ PydanticF64Array = Annotated[
 ]
 
 
+@dataclass
+class TrainData:
+    disco: list[str] = Field(default_factory=list)
+    emg: list[str] = Field(default_factory=list)
+
+
+
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True), frozen=True)
 class EmgDataset:
     data: list[npt.NDArray[np.float32]]  # Each element has shape (T_i, channels)

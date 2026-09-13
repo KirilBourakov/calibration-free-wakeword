@@ -1,20 +1,24 @@
 import lightning as light
 import torch
 from torch.nn.functional import cross_entropy
-from torch.utils.data import DataLoader
 
 from mci_wake.model.neural.classifier import (
-    DiscreteClassifier,
     DiscreteClassifierConfig,
-    DL_input_data,
+    DiscreteModel,
+    _DiscreteClassifierNet,
 )
 
 
 class DiscreteLightningModule(light.LightningModule):
-    def __init__(self, defn: DiscreteClassifier | DiscreteClassifierConfig):
+    def __init__(self, defn: _DiscreteClassifierNet | DiscreteModel | DiscreteClassifierConfig):
         super().__init__()
         self.save_hyperparameters()
-        self.internals: DiscreteClassifier = defn if isinstance(defn, DiscreteClassifier) else DiscreteClassifier(defn)
+        if isinstance(defn, _DiscreteClassifierNet):
+            self.internals = defn
+        elif isinstance(defn, DiscreteModel):
+            self.internals = defn.net
+        else:
+            self.internals = _DiscreteClassifierNet(defn)
         self.config = self.internals.config
         self.lr = self.config.lr
 
@@ -25,11 +29,11 @@ class DiscreteLightningModule(light.LightningModule):
         x, y, lengths = batch
         logits = self(x, lengths)
         loss = cross_entropy(logits, y)
-        
+
         preds = logits.argmax(dim=1)
         acc = (preds == y).float().mean()
-        
-        mask = (y != 0)
+
+        mask = y != 0
         if mask.any():
             acc_a = (preds[mask] == y[mask]).float().mean()
             self.log("train_acc_a", acc_a, prog_bar=True)
@@ -43,10 +47,10 @@ class DiscreteLightningModule(light.LightningModule):
         x, y, lengths = batch
         logits = self(x, lengths)
         loss = cross_entropy(logits, y)
-        
+
         preds = logits.argmax(dim=1)
         acc = (preds == y).float().mean()
-        
+
         mask = y != 0
         if mask.any():
             acc_a = (preds[mask] == y[mask]).float().mean()

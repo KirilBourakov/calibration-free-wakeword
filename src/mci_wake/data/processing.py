@@ -4,8 +4,8 @@ from typing import Union, Any, Optional, Tuple, List, Dict
 import numpy as np
 from numpy import typing as npt
 
-from mci_wake.data.types import EmgDataset
-from mci_wake.model.neural.classifier import TrainData
+from mci_wake.data.types import EmgDataset, TrainData
+
 
 
 def _parse_subject_id(val: Union[int, str, Any]) -> Optional[int]:

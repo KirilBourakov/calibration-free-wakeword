@@ -21,7 +21,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from mci_wake.data import gesture_mapping, load_raw_data
-from mci_wake.model.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
+from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig
 from mci_wake.model.neural.io import load
 from mci_wake.data_handler.stitching import StitchingDataHandler
 from libemg.utils import get_windows
@@ -39,7 +39,8 @@ increment = 5        # Subwindow & streaming step size matching model_chain.py
 
 def main():
     # Safe unpickling globals for PyTorch 2.6+
-    torch.serialization.add_safe_globals([DiscreteClassifierConfig, DiscreteClassifier])
+    torch.serialization.add_safe_globals([DiscreteClassifierConfig, DiscreteModel])
+
 
     model_path = Path(DEFAULT_MODEL_PATH)
     print(f"Loading base model from: {model_path}")

@@ -1,11 +1,7 @@
 import winsound
 import numpy as np
-from libemg.feature_extractor import FeatureExtractor
-from libemg.utils import get_windows
 import time
 import statistics
-
-from libemg.data_handler import OnlineDataHandler
 
 from mci_wake.data_handler.abstract import AbstractDataHandler, OfflineCapableAbstractDataHandler
 from mci_wake.model.abstract import AbstractModel
@@ -16,9 +12,9 @@ class ModelState:
     def __init__(
         self,
         model: AbstractModel,
-        window_size: int,
-        increment: int,
-        buffer_size: int,
+        window_size: int = 10,
+        increment: int = 5,
+        buffer_size: int = 5,
         transforms: Transform | None = None,
     ):
         n_classes = getattr(model, "n_classes", getattr(getattr(model, "config", None), "n_classes", None))
@@ -33,10 +29,10 @@ class ModelState:
     def next_step(self, odh: AbstractDataHandler, size: int) -> bool:
         dh_out = odh.get_data(size)
         emg = dh_out.emg[::-1]
-        feats = self._get_features([emg], None, None)[0]
+        data = self.transforms(emg) if (len(emg) > 0 and self.transforms is not None) else emg
 
         # predict
-        pred = self.model.predict(feats)
+        pred = self.model.predict(data)
         self.buffer.append(pred)
         if len(self.buffer) > self.buffer_size:
             self.buffer = self.buffer[-self.buffer_size:]
@@ -46,27 +42,6 @@ class ModelState:
     def reset(self):
         self.buffer = []
         self.model.reset()
-
-    def _get_features(self, data, feats, feat_dic):
-        fe = FeatureExtractor()
-        data = np.array([
-            get_windows(
-                self.transforms(d) if (len(d) > 0 and self.transforms is not None) else d,
-                self.window_size,
-                self.increment
-            )
-            for d in data
-        ], dtype='object')
-        if feats is None:
-            return data
-        if feat_dic is not None:
-            feats = np.array([fe.extract_features(feats, d, array=True, feature_dic=feat_dic) for d in data],
-                             dtype='object')
-        else:
-            feats = np.array([fe.extract_features(feats, np.array(d, dtype='float'), array=True) for d in data],
-                             dtype='object')
-        feats = np.nan_to_num(feats, copy=True, nan=0, posinf=0, neginf=0)
-        return feats
 
 
 class ModelChain:
