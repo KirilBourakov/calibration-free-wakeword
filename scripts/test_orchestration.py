@@ -5,6 +5,7 @@ import torch
 
 from mci_wake.data import filter_training, load_raw_data
 from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig, TrainData
+from mci_wake.orchestration import ModelCascade
 from mci_wake.orchestration.model_chain import ModelChain
 from mci_wake.data_handler.stitching import StitchingDataHandler
 from mci_wake.transform.highpass import HighPassFilter
@@ -14,7 +15,7 @@ from mci_wake.utils.io import modelpath
 
 
 def get_models() -> tuple[DiscreteModel, ...]:
-    model1 = DiscreteModel.load_from_checkpoint(modelpath(8))
+    model1 = DiscreteModel.load_from_checkpoint(modelpath(10))
     return (model1,)
 
 
@@ -65,7 +66,8 @@ def main():
     else:
         print(f"Running fast simulation for {args.duration} simulated seconds...")
         start_t = time.time()
-        discrete = ModelChain(handler, 10, 5, list(models), transforms=None, verbose=False)
+        # discrete = ModelChain(handler, 10, 5, list(models), transforms=None, verbose=False)
+        discrete = ModelCascade(handler, )
         discrete.run(duration_sec=args.duration)
         elapsed = time.time() - start_t
         print(f"Simulation completed in {elapsed:.2f} seconds wall-clock time!")

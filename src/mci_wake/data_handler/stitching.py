@@ -246,7 +246,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         else:
             # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-0.75s no-gesture gaps
             is_test_case = True
-            segments = self.get_sequence_segments(self.gesture_sequence)
+            segments = self.get_sequence_segments(self.gesture_sequence, max_duration_between=.1)
 
         return segments, is_test_case
 
@@ -289,7 +289,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
 
     def generate_positive(self) -> npt.NDArray[np.float32]:
         """Generates a synthetic positive sequence trial."""
-        return self.stitch_sequence(self.gesture_sequence, max_duration_between=.25)
+        return self.stitch_sequence(self.gesture_sequence, max_duration_between=.1)
 
     def generate_negative(self) -> npt.NDArray[np.float32]:
         """Generates a hard negative sequence trial (reversed order, prefix mismatch, suffix mismatch,

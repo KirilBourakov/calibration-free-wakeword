@@ -1,4 +1,5 @@
 import os
+import warnings
 from dataclasses import replace
 from typing import List, Any, Dict, Annotated, overload, Optional
 
@@ -145,6 +146,67 @@ class EmgDataset:
         else:
             n_train = int(len(self) * (1.0 - test_percentage))
             return self[:n_train], self[n_train:]
+
+    def reduce_proportional(
+        self,
+        n: int | None = None,
+        proportions: tuple[float, ...] | None = None,
+        *,
+        seed: int | None = None,
+    ) -> "EmgDataset":
+        """Return a new dataset with (at most) ``n`` samples, dropping the rest."""
+        total = len(self.data)
+        assert n is not None or proportions is not None, "Provide n, proportions, or both."
+        assert n is None or 0 <= n <= total, f"n must be in [0, {total}], got {n}"
+
+        classes, counts = np.unique(self.labels, return_counts=True)
+
+        # 1. Resolve proportions and feasible max
+        if proportions is not None and n == total:
+            return self
+        elif proportions is None:
+            props, n_max = counts / total, total
+        else:
+            props = np.asarray(proportions, dtype=np.float64)
+            assert props.shape == classes.shape and (props >= 0).all() and props.sum() > 0, (
+                f"Proportions must match {classes.tolist()}, non-negative, and sum > 0"
+            )
+            props /= props.sum()
+            nz = props > 0
+            n_max = int(np.min(counts[nz] // props[nz]))
+
+        # 2. Bound n
+        if n is not None and n > n_max:
+            warnings.warn(
+                f"Requested {n} samples with proportions {np.round(props, 4).tolist()}, "
+                f"but class counts {dict(zip(classes.tolist(), counts.tolist()))} "
+                f"allow at most {n_max}; using {n_max}.",
+                stacklevel=2,
+            )
+        n = min(n if n is not None else n_max, n_max)
+
+        # 3. Largest-remainder quota allocation
+        quotas = n * props
+        alloc = np.floor(quotas).astype(np.int64)
+        remainder = n - int(alloc.sum())
+        if remainder > 0:
+            alloc[np.argsort(-(quotas % 1), kind="stable")[:remainder]] += 1
+
+        # 4. Sample indices and retain dataset ordering
+        rng = np.random.default_rng(seed)
+        keep = np.concatenate([
+            rng.choice(np.flatnonzero(self.labels == cls), size=k, replace=False)
+            for cls, k in zip(classes, alloc)
+            if k > 0
+        ])
+        keep.sort()
+
+        return replace(
+            self,
+            data=[self.data[i] for i in keep],
+            labels=self.labels[keep],
+            subjects=self.subjects[keep],
+        )
 
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
 

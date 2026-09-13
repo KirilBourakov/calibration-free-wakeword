@@ -18,7 +18,7 @@ if __name__ == "__main__":
     transforms = Transform(HighPassFilter(), RestNormalizer())
     transforms.fit(emg)
 
-    model1 = DiscreteModel.load_from_checkpoint(modelpath(8))
+    model1 = DiscreteModel.load_from_checkpoint(modelpath(10))
 
     # model2 = DiscreteModel.load_from_checkpoint(
     #     r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"

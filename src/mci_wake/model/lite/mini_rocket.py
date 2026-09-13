@@ -1,101 +1,83 @@
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
 import joblib
 import numpy as np
+import numpy.typing as npt
+from libemg.utils import get_windows
 from sklearn.linear_model import LogisticRegression
 from sktime.transformations.rocket import MiniRocketMultivariate
 
-from mci_wake.model import AbstractModel
+from mci_wake.data.types import EmgDataset, TrainData
+from mci_wake.model.abstract import AbstractModel
 
 
-# Draft version; non functional
+@dataclass
+class MiniRocketConfig:
+    window_size: int = 250
+    increment: int = 25
+    num_kernels: int = 84
+    decision_threshold: float = 0.3
+    window_agg: str = "mean"  # "mean" or "max"
+    class_weight: str = "balanced"
+    max_iter: int = 1000
+    n_classes: int = 2
+    gestures: list[str] = field(default_factory=list)
+    customers: TrainData = field(default_factory=TrainData)
+    seed: int = 0
+
+
 class MiniRocketModel(AbstractModel):
-    """
-    Light model: sktime MiniRocketMultivariate transform + linear head.
-
-    Stateless at inference, so reset() is a no-op and the cascade's
-    reset discipline costs nothing.
-    """
-
-    def __init__(
-        self,
-        num_kernels: int = 512,           # sktime default -> 512 PPV features
-        decision_threshold: float = 0.3,  # < 0.5 biases toward recall (stage-1 role)
-        window_agg: str = "mean",         # how to combine windows in one template
-        class_weight="balanced",          # rest windows will dominate your data
-        seed: int = 0,
-    ):
-        self._n_classes = 2
-        self.num_kernels = num_kernels
-        self.decision_threshold = decision_threshold
-        self.window_agg = window_agg
-        self.class_weight = class_weight
-        self.seed = seed
-
-        self.trf = MiniRocketMultivariate(num_kernels=num_kernels, random_state=seed)
-        self.clf = LogisticRegression(max_iter=1000, class_weight=class_weight)
+    def __init__(self, config: MiniRocketConfig | None = None):
+        self.config = config or MiniRocketConfig()
+        self.trf = MiniRocketMultivariate(num_kernels=self.config.num_kernels, random_state=self.config.seed)
+        self.clf = LogisticRegression(
+            max_iter=self.config.max_iter,
+            class_weight=self.config.class_weight,
+            random_state=self.config.seed,
+        )
         self._fitted = False
 
     @property
     def n_classes(self) -> int:
-        return self._n_classes
+        return self.config.n_classes
 
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "MiniRocketModel":
-        """
-        X: (n_windows, n_channels, n_timepoints) float32 — raw windows, channels first.
-        y: (n_windows,) int — 0 = rest/negative, 1 = gesture/positive.
-        """
-        X = self._check_X(X)
-        if X.shape[0] < 10:
-            raise ValueError(
-                f"MiniRocket quantile binning needs >= 10 training windows, got {X.shape[0]}"
-            )
-        self.n_channels, self.n_timepoints = X.shape[1], X.shape[2]
+    def _get_windows(self, arr: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
+        if len(arr) < self.config.window_size:
+            arr = np.pad(arr, ((self.config.window_size - len(arr), 0), (0, 0)))
+        return get_windows(arr, self.config.window_size, self.config.increment).astype(np.float32) # type: ignore // libemg incorrect typing here
 
-        Xt = self.trf.fit_transform(X)      # (n_windows, num_kernels), PPV in [0, 1]
-        self.clf.fit(Xt, y)
+    def fit(self, train: EmgDataset, test: EmgDataset, customers: TrainData | None = None) -> "MiniRocketModel":
+        if customers is not None:
+            self.config.customers = customers
 
-        # numba JIT warm-up
-        self.trf.transform(X[:2])
+        windows = [self._get_windows(trial) for trial in train.data]
+        windowed_signals = np.concatenate(windows, axis=0)
+        window_labels = np.concatenate([[label] * len(w) for w, label in zip(windows, train.labels)])
+
+        rocket_features = self.trf.fit_transform(windowed_signals)
+        self.clf.fit(rocket_features, window_labels)
+        self.trf.transform(windowed_signals[:1])  # Numba JIT warm-up
         self._fitted = True
         return self
 
-    def predict_proba(self, data) -> np.ndarray:
-        """Per-window probabilities, shape (n_windows, 2)."""
+    def predict(self, data: npt.NDArray[np.float32], **kwargs: Any) -> int:
         if not self._fitted:
-            raise RuntimeError("Call fit() or load() before predicting")
-        X = self._check_X(data)
-        return self.clf.predict_proba(self.trf.transform(X))
+            raise RuntimeError("Model is not fitted. Call fit() or load() before predicting.")
+        windows = self._get_windows(data)
+        rocket_features = self.trf.transform(windows)
+        proba = self.clf.predict_proba(rocket_features)[:, 1]
+        score = proba.max() if self.config.window_agg == "max" else proba.mean()
+        return int(score > self.config.decision_threshold)
 
-    def predict(self, data, **kwargs) -> int:
-        proba = self.predict_proba(data)
-        # template contains several overlapping windows -> aggregate, then threshold
-        p1 = proba[:, 1].mean() if self.window_agg == "mean" else proba[:, 1].max()
-        return int(p1 > self.decision_threshold)
+    def save(self, path: str | Path) -> None:
+        joblib.dump({"config": self.config, "trf": self.trf, "clf": self.clf, "fitted": self._fitted}, path)
 
-    def reset(self) -> None:
-        pass  # stateless
-
-    def save(self, path: str) -> None:
-        joblib.dump(self, path)
-
-    @staticmethod
-    def load(path: str) -> "MiniRocketModel":
-        model = joblib.load(path)
-        model.trf.transform(np.zeros((2, model.n_channels, model.n_timepoints), dtype=np.float32))
-        return model  # warm up numba after reload too
-
-    def _check_X(self, data) -> np.ndarray:
-        X = np.asarray(data, dtype=np.float32)
-        if X.ndim == 2:  # single window -> batch of 1
-            X = X[None]
-        if X.ndim != 3:
-            raise ValueError(f"expected 2D/3D window array, got shape {X.shape}")
-        # orient to (n, channels, time) using dims memorized at fit time —
-        # covers both get_windows layouts: (n, t, c) and (n, c, t)
-        if X.shape[1] != self.n_channels:
-            X = np.ascontiguousarray(X.transpose(0, 2, 1))
-        if X.shape[1:] != (self.n_channels, self.n_timepoints):
-            raise ValueError(
-                f"windows {X.shape} don't match fitted "
-                f"({self.n_channels}, {self.n_timepoints})"
-            )
-        return X
+    @classmethod
+    def load(cls, path: str | Path) -> "MiniRocketModel":
+        bundle = joblib.load(path)
+        model = cls(config=bundle["config"])
+        model.trf, model.clf, model._fitted = bundle["trf"], bundle["clf"], bundle["fitted"]
+        model.trf.transform(np.zeros((1, 8, model.config.window_size), dtype=np.float32))  # Warm-up
+        return model
