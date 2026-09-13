@@ -1,9 +1,12 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
-
 
 import numpy as np
 import numpy.typing as npt
+
+
+from mci_wake.data.types import EmgDataset, TrainData
 
 
 class AbstractModel(ABC):
@@ -14,16 +17,33 @@ class AbstractModel(ABC):
         ...
 
     @abstractmethod
+    def fit(
+        self,
+        train: EmgDataset,
+        test: EmgDataset,
+        customers: TrainData | None = None,
+    ) -> "AbstractModel":
+        """
+        Train the model on the provided datasets.
+
+        Returns
+        -------
+        self : AbstractModel
+            The trained model instance.
+        """
+        ...
+
+    @abstractmethod
     def predict(self, data: npt.NDArray[np.float32], **kwargs: Any) -> int:
         """
-        Make a prediction on the provided windowed features / EMG data.
+        Make a discrete class prediction on the provided EMG data segment.
 
         Parameters
         ----------
-        data : Any
-            Input data (e.g., numpy array or tensor representing windowed EMG features).
+        data : npt.NDArray[np.float32]
+            Input raw or transformed EMG segment (shape: (timepoints, channels)).
         **kwargs : Any
-            Additional backend-specific arguments (e.g. device for PyTorch models).
+            Backend-specific inference arguments (e.g. device for PyTorch models).
 
         Returns
         -------
@@ -34,6 +54,29 @@ class AbstractModel(ABC):
 
     def reset(self) -> None:
         """
-        Reset internal state of the model.
+        Reset internal streaming/temporal state of the model.
+        Default implementation is a no-op for stateless models.
         """
         pass
+
+    @abstractmethod
+    def save(self, path: str | Path) -> None:
+        """
+        Save model weights and configuration to the specified path or directory.
+        """
+        ...
+
+    def eval(self) -> "AbstractModel":
+        """
+        Set the model to evaluation/inference mode.
+        Default implementation is a no-op for non-neural models.
+        """
+        return self
+
+    def set_train_mode(self, mode: bool = True) -> "AbstractModel":
+        """
+        Set the model to training mode.
+        Default implementation is a no-op for non-neural models.
+        """
+        return self
+
