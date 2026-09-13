@@ -30,7 +30,7 @@ class ModelState:
         self.transforms = transforms
         self.buffer: list[int] = []
 
-    def next_step(self, odh: AbstractDataHandler, size: int):
+    def next_step(self, odh: AbstractDataHandler, size: int) -> bool:
         dh_out = odh.get_data(size)
         emg = dh_out.emg[::-1]
         feats = self._get_features([emg], None, None)[0]

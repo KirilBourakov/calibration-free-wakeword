@@ -2,8 +2,6 @@ import time
 import winsound
 import statistics
 import numpy as np
-from libemg.feature_extractor import FeatureExtractor
-from libemg.utils import get_windows
 
 from mci_wake.data_handler.abstract import AbstractDataHandler, OfflineCapableAbstractDataHandler
 from mci_wake.model.abstract import AbstractModel
@@ -69,7 +67,7 @@ class ModelCascade:
         self.verbose = verbose
 
         self.light = ModelState(light_model, window_size, increment, buffer, transforms=transforms)
-        self.heavy = ModelState(heavy_model, window_size, increment, buffer, transforms=transforms)
+        self.heavy = ModelState(heavy_model, window_size, increment, min(buffer, verification_steps), transforms=transforms)
 
         self.template_size = template_size
         self.min_template_size = min_template_size
