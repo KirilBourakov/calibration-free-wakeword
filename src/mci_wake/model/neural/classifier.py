@@ -158,7 +158,7 @@ class DiscreteModel(AbstractModel):
     def _get_windows(self, data: EmgDataset) -> EmgDataset:
         """Extracts sliding windows from an EmgDataset using this model's configuration."""
         windowed_data = [
-            get_windows(d, self.config.window_size, self.config.increment).astype(np.float32)
+            get_windows(d, self.config.window_size, self.config.increment).astype(np.float32)  # type: ignore // libemg doc types are wrong
             for d in data.data
         ]
         return EmgDataset(
@@ -170,7 +170,7 @@ class DiscreteModel(AbstractModel):
 
     def _prepare_input(self, data: npt.NDArray[np.float32], device: str | None = None) -> torch.Tensor:
         """Extract sliding windows from ndarray"""
-        windows = get_windows(data, self.config.window_size, self.config.increment).astype(np.float32)
+        windows = get_windows(data, self.config.window_size, self.config.increment).astype(np.float32) # type: ignore // libemg doc types are wrong
         return torch.tensor(windows[None], dtype=torch.float32, device=device or self.device)
 
 
