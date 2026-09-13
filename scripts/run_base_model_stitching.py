@@ -21,8 +21,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from mci_wake.data import gesture_mapping, load_raw_data
-from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
-from mci_wake.neural.io import load
+from mci_wake.model.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig
+from mci_wake.model.neural.io import load
 from mci_wake.data_handler.stitching import StitchingDataHandler
 from libemg.utils import get_windows
 
@@ -33,9 +33,9 @@ DEFAULT_MODEL_PATH = ROOT_DIR / "data" / "models" / "base"
 gestures = ['pinch']
 probabilities = (0.8, 0, 0.2)
 duration_sec = 300
-template_size = 250  # Template buffer size matching wake_detect.py
-window_size = 10     # Subwindow size for get_windows matching wake_detect.py
-increment = 5        # Subwindow & streaming step size matching wake_detect.py
+template_size = 250  # Template buffer size matching model_chain.py
+window_size = 10     # Subwindow size for get_windows matching model_chain.py
+increment = 5        # Subwindow & streaming step size matching model_chain.py
 
 def main():
     # Safe unpickling globals for PyTorch 2.6+
@@ -88,7 +88,7 @@ def main():
         feats = get_windows(window_raw, window_size, increment)
         
         # Predict logits
-        _, _, output_logits = base_model.predict(feats)
+        output_logits = base_model.predict_logits(feats)
         logits = output_logits.detach().cpu().numpy()[0]
 
         time_sec = sample_idx / fs

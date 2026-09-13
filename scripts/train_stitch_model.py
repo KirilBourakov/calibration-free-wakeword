@@ -3,8 +3,8 @@ import numpy as np
 from mci_wake.data import load_raw_data, preprocess_nm_data
 from mci_wake.data.generation import generate_training_data
 from mci_wake.data.processing import get_features
-from mci_wake.neural import DiscreteClassifierConfig, train_model
-from mci_wake.neural.classifier import TrainData
+from mci_wake.model.neural import DiscreteClassifierConfig, train_model
+from mci_wake.model.neural.classifier import TrainData
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform

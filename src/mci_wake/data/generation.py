@@ -4,7 +4,6 @@ import numpy as np
 import numpy.typing as npt
 
 from mci_wake.data.types import EmgDataset
-from mci_wake.data_handler.stitching import StitchingDataHandler
 
 
 def generate_training_data(
@@ -49,6 +48,8 @@ def generate_training_data(
     labels: list[int] = []
     subjects: list[int] = []
 
+
+    from mci_wake.data_handler.stitching import StitchingDataHandler
 
     for s in np.unique(emg.subjects):
         mask = cast(np.ndarray, cast(object, emg.subjects == s))

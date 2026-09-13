@@ -1,3 +1,3 @@
-from mci_wake.orchestration.wake_detect import WakeDetect
+from mci_wake.orchestration.model_chain import ModelChain
 
-__all__ = ["WakeDetect"]
+__all__ = ["ModelChain"]

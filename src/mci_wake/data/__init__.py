@@ -1,4 +1,4 @@
-from mci_wake.neural.classifier import TrainData
+from mci_wake.model.neural.classifier import TrainData
 from mci_wake.data.generation import generate_training_data
 from mci_wake.data.loaders import load_raw_data, load_epn_data
 from mci_wake.data.processing import filter_training, preprocess_nm_data, get_features

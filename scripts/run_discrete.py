@@ -2,9 +2,9 @@ import torch
 
 from mci_wake.data import load_raw_data
 from mci_wake.data_handler.online import CompatibleOnlineDataHandler
-from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig, TrainData
-from mci_wake.neural.lightning_module import DiscreteLightningModule
-from mci_wake.orchestration.wake_detect import WakeDetect
+from mci_wake.model.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig, TrainData
+from mci_wake.model.neural.lightning_module import DiscreteLightningModule
+from mci_wake.orchestration.model_chain import ModelChain
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
@@ -28,5 +28,5 @@ if __name__ == "__main__":
     # )
     # model2 = lightning_model.internals
 
-    discrete = WakeDetect(CompatibleOnlineDataHandler(), 10, 5, [model1], transforms=transforms)
+    discrete = ModelChain(CompatibleOnlineDataHandler(), 10, 5, [model1], transforms=transforms)
     discrete.run()

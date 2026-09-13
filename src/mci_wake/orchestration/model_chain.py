@@ -8,20 +8,21 @@ import statistics
 from libemg.data_handler import OnlineDataHandler
 
 from mci_wake.data_handler.abstract import AbstractDataHandler, OfflineCapableAbstractDataHandler
-from mci_wake.neural.classifier import DiscreteClassifier
+from mci_wake.model.abstract import AbstractModel
 from mci_wake.transform.transform import Transform
 
 
 class ModelState:
     def __init__(
         self,
-        model: DiscreteClassifier,
+        model: AbstractModel,
         window_size: int,
         increment: int,
         buffer_size: int,
         transforms: Transform | None = None,
     ):
-        assert model.config.n_classes == 2
+        n_classes = getattr(model, "n_classes", getattr(getattr(model, "config", None), "n_classes", None))
+        assert n_classes == 2, f"Model must have 2 classes, got {n_classes}"
         self.model = model
         self.window_size = window_size
         self.increment = increment
@@ -35,7 +36,7 @@ class ModelState:
         feats = self._get_features([emg], None, None)[0]
 
         # predict
-        pred, prob_, output = self.model.predict(feats)
+        pred = self.model.predict(feats)
         self.buffer.append(pred)
         if len(self.buffer) > self.buffer_size:
             self.buffer = self.buffer[-self.buffer_size:]
@@ -44,6 +45,7 @@ class ModelState:
 
     def reset(self):
         self.buffer = []
+        self.model.reset()
 
     def _get_features(self, data, feats, feat_dic):
         fe = FeatureExtractor()
@@ -67,20 +69,20 @@ class ModelState:
         return feats
 
 
-class WakeDetect:
+class ModelChain:
     """
-    Based on the Discrete Control class
+    Orchestrator that chains multiple models together for sequential gesture/wake detection.
 
     Parameters
     ----------
-    odh: OnlineDataHandler
+    odh: AbstractDataHandler
         The online data handler object for streaming EMG data.
     window_size: int
         The window size (in samples) to use for splitting up each template.
     increment: int
         The increment size (in samples) for the sliding window.
-    models: list[DiscreteClassifier]
-        The trained PyTorch models for sequence detection.
+    models: list[AbstractModel]
+        The trained models for sequence detection.
     buffer: int, optional
         The size of the prediction buffer to use for mode filtering. Default is 5.
     template_size: int, optional
@@ -96,7 +98,7 @@ class WakeDetect:
         odh: AbstractDataHandler,
         window_size: int,
         increment: int,
-        models: list[DiscreteClassifier],
+        models: list[AbstractModel],
         buffer=5,
         template_size=250,
         min_template_size=150,

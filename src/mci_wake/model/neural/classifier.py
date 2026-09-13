@@ -14,10 +14,14 @@ from torch.nn import RNNBase
 from torch.nn.functional import softmax
 from torch.utils.data import DataLoader, Dataset
 
+from mci_wake.model.abstract import AbstractModel
+
+
 @dataclass
 class TrainData:
     disco: list[str] = Field(default_factory=list)
     emg: list[str] = Field(default_factory=list)
+
 
 @dataclass
 class DiscreteClassifierConfig:
@@ -37,11 +41,12 @@ class DiscreteClassifierConfig:
     def file_name(self):
         return f"ADL_{self.type}"
 
+
 """
 This is a basic Discrete classifier that goes from EMG to prediction. It uses cross entropy loss to 
 optimize its performance on predicting the correct active class.
 """
-class DiscreteClassifier(nn.Module):
+class DiscreteClassifier(nn.Module, AbstractModel):
     def __init__(self, config: DiscreteClassifierConfig):
         super().__init__()
         
@@ -87,13 +92,21 @@ class DiscreteClassifier(nn.Module):
         self.output_layer = nn.Linear(config.mlp_layers[-1], config.n_classes) 
         self.relu = nn.ReLU()
 
-    def predict(self, gest: Tensor, device='cpu') -> tuple[int, float, torch.Tensor]:
+    @property
+    def n_classes(self) -> int:
+        return self.config.n_classes
+
+    def predict(self, gest: Tensor, device='cpu') -> int:
         g_tensor = torch.tensor(np.expand_dims(np.array(gest, dtype=np.float32), axis=0), dtype=torch.float32).to(device)
         with torch.no_grad():
             output = self.forward_once(g_tensor)
             pred = output.argmax(dim=1).item()
-            prob = softmax(output, dim=1).max().item()
-        return pred, prob, output
+        return pred
+
+    def predict_logits(self, gest: Tensor, device='cpu') -> torch.Tensor:
+        g_tensor = torch.tensor(np.expand_dims(np.array(gest, dtype=np.float32), axis=0), dtype=torch.float32).to(device)
+        with torch.no_grad():
+            return self.forward_once(g_tensor)
 
     def forward_conv(self, x):
         batch_size, seq_len, channels, samples = x.shape
@@ -136,6 +149,7 @@ class DiscreteClassifier(nn.Module):
             out = out[:,-1,:]
         return out 
 
+
 class DL_input_data(Dataset):
     def __init__(self, windows, classes):
         data, lengths = self.buffer(windows)
@@ -165,6 +179,7 @@ class DL_input_data(Dataset):
     def __len__(self):
         return self.data.shape[0]
 
+
 def make_data_loader(windows, classes, batch_size=64, shuffle=True):
     obj = DL_input_data(windows, classes)
     dl = DataLoader(
@@ -173,6 +188,7 @@ def make_data_loader(windows, classes, batch_size=64, shuffle=True):
         shuffle=shuffle
     )
     return dl
+
 
 def fix_random_seed(seed_value, use_cuda=True):
     np.random.seed(seed_value)  # cpu vars

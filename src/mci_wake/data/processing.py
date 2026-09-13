@@ -5,7 +5,7 @@ import numpy as np
 from numpy import typing as npt
 
 from mci_wake.data.types import EmgDataset
-from mci_wake.neural.classifier import TrainData
+from mci_wake.model.neural.classifier import TrainData
 
 
 def _parse_subject_id(val: Union[int, str, Any]) -> Optional[int]:

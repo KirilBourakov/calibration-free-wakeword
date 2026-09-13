@@ -4,9 +4,9 @@ import threading
 import torch
 
 from mci_wake.data import filter_training, load_raw_data
-from mci_wake.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig, TrainData
-from mci_wake.neural.lightning_module import DiscreteLightningModule
-from mci_wake.orchestration.wake_detect import WakeDetect
+from mci_wake.model.neural.classifier import DiscreteClassifier, DiscreteClassifierConfig, TrainData
+from mci_wake.model.neural.lightning_module import DiscreteLightningModule
+from mci_wake.orchestration.model_chain import ModelChain
 from mci_wake.data_handler.stitching import StitchingDataHandler
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
@@ -61,12 +61,12 @@ def main():
         stats_thread = threading.Thread(target=print_stats_periodically, daemon=True)
         stats_thread.start()
 
-        discrete = WakeDetect(handler, 10, 5, list(models), transforms=None)
+        discrete = ModelChain(handler, 10, 5, list(models), transforms=None)
         discrete.run()
     else:
         print(f"Running fast simulation for {args.duration} simulated seconds...")
         start_t = time.time()
-        discrete = WakeDetect(handler, 10, 5, list(models), transforms=None, verbose=False)
+        discrete = ModelChain(handler, 10, 5, list(models), transforms=None, verbose=False)
         discrete.run(duration_sec=args.duration)
         elapsed = time.time() - start_t
         print(f"Simulation completed in {elapsed:.2f} seconds wall-clock time!")

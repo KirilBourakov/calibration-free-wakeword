@@ -11,13 +11,13 @@ from lightning import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 from mci_wake.data.types import EmgDataset, gesture_mapping
-from mci_wake.neural.classifier import (
+from mci_wake.model.neural.classifier import (
     DiscreteClassifier,
     DiscreteClassifierConfig,
     TrainData,
     make_data_loader,
 )
-from mci_wake.neural.lightning_module import DiscreteLightningModule
+from mci_wake.model.neural.lightning_module import DiscreteLightningModule
 
 
 def train_model(
@@ -87,8 +87,6 @@ def train_model(
     print(f"Structured metadata saved to: {yaml_path}")
 
     trainer.fit(model, train_dataloaders=tr_dl, val_dataloaders=te_dl)
-
-
 
     return cast(DiscreteLightningModule, trainer.lightning_module).internals
 
