@@ -251,7 +251,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         return segments, is_test_case
 
     def get_sequence_segments(
-        self, sequence: list[int] | list[str] | None = None
+        self, sequence: list[int] | list[str] | None = None, max_duration_between = .75
     ) -> list[npt.NDArray[np.float32]]:
         """Builds a list of gesture segments separated by realistic no-gesture gaps."""
         seq =  (
@@ -274,22 +274,22 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
             segments.append(self.emg_data.data[idx])
 
             if i < len(seq) - 1:
-                no_g_seg = self._get_no_gesture_segment(max_duration_sec=0.75)
+                no_g_seg = self._get_no_gesture_segment(max_duration_sec=max_duration_between)
                 if no_g_seg is not None and len(no_g_seg) > 0:
                     segments.append(no_g_seg)
 
         return segments
 
     def stitch_sequence(
-        self, sequence: list[int] | list[str] | None = None
+        self, sequence: list[int] | list[str] | None = None, max_duration_between = .75
     ) -> npt.NDArray[np.float32]:
         """Stitches a gesture sequence into a single continuous array using constant-power Hanning cross-fading."""
-        segments = self.get_sequence_segments(sequence)
+        segments = self.get_sequence_segments(sequence, max_duration_between=max_duration_between)
         return stitch(segments, overlap_samples=self.overlap_samples).astype(np.float32)
 
     def generate_positive(self) -> npt.NDArray[np.float32]:
         """Generates a synthetic positive sequence trial."""
-        return self.stitch_sequence(self.gesture_sequence)
+        return self.stitch_sequence(self.gesture_sequence, max_duration_between=.25)
 
     def generate_negative(self) -> npt.NDArray[np.float32]:
         """Generates a hard negative sequence trial (reversed order, prefix mismatch, suffix mismatch,

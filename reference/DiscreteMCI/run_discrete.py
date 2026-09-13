@@ -10,9 +10,9 @@ from libemg.data_handler import OnlineDataHandler
 from libemg.discrete import DiscreteControl
 
 if __name__ == "__main__":
-    # _, sm = myo_streamer()
-    # odh = OnlineDataHandler(sm)
+    _, sm = myo_streamer()
+    odh = OnlineDataHandler(sm)
     model = torch.load('Other/Discrete.model', map_location=torch.device('cpu'), weights_only=False)
     print(model.__dict__)
-    # discrete = DiscreteControl(odh, 10, 5, model)
-    # discrete.run()
+    discrete = DiscreteControl(odh, 10, 5, model)
+    discrete.run()

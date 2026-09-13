@@ -9,12 +9,14 @@ from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
 
-TARGET_SEQUENCE = ["pinch", "fist"]
+TARGET_SEQUENCE = ["waveIn", "waveOut"]
 WINDOW_SIZE: int = 10
 INCREMENT_SIZE: int = 5
 TEST_SUBJECT_RATIO: float = 0.1
 
-
+# TODO: customize gap between and retrain?
+# Try open (open -> fist -> open)?
+# Dario Ferino - main emg person
 def main() -> None:
     print(f"Target sequence: {TARGET_SEQUENCE}")
 
