@@ -4,4 +4,5 @@ numpy
 pydantic
 pygame
 pyautogui
+sktime
 # Note: libemg is installed locally from submodule (e.g. pip install -e ./libemg)

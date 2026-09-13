@@ -3,13 +3,6 @@ from typing import Any
 
 
 class AbstractModel(ABC):
-    """
-    Abstract base class for models used in ModelChain and other orchestration pipelines.
-
-    Subclasses can be neural networks, classical machine learning classifiers (e.g. SVM,
-    Random Forest, LDA), template-matching algorithms, or custom rule-based detectors.
-    """
-
     @property
     @abstractmethod
     def n_classes(self) -> int:
@@ -38,8 +31,5 @@ class AbstractModel(ABC):
     def reset(self) -> None:
         """
         Reset internal state of the model.
-
-        Override this method if the model maintains state across steps (e.g. recurrent states,
-        buffers, online normalizers, or running filters). Default implementation is a no-op.
         """
         pass

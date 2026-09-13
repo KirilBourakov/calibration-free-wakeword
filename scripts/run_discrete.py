@@ -8,6 +8,7 @@ from mci_wake.orchestration.model_chain import ModelChain
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
+from mci_wake.utils.io import modelpath
 
 if __name__ == "__main__":
     # Allowlist custom classes for safe unpickling in PyTorch 2.6+
@@ -19,7 +20,7 @@ if __name__ == "__main__":
     transforms.fit(emg)
 
     lightning_model = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_9\checkpoints\best-model-epoch=07-val_acc=1.00.ckpt"
+        modelpath(10)
     )
     model1 = lightning_model.internals
 
