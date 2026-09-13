@@ -38,7 +38,9 @@ def main():
     emg_data_norm = transforms(emg)
     adl_data_norm = transforms(adl)
 
-    gestures = ["waveIn", "waveOut"]
+
+    assert all(m.config.gestures == models[0].config.gestures for m in models)
+    gestures = models[0].config.gestures
     realtime = args.realtime
     handler = StitchingDataHandler(
         emg_data=emg_data_norm,
