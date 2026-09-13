@@ -7,13 +7,12 @@ from mci_wake.data import (
     EmgDataset,
     TrainData,
     gesture_mapping,
-    get_features,
     load_raw_data,
     preprocess_nm_data,
 )
-from mci_wake.model.neural.classifier import DiscreteClassifierConfig
-from mci_wake.model.neural.training import train_model
+from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig
 from mci_wake.transform.highpass import HighPassFilter
+
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
 
@@ -69,14 +68,9 @@ def main() -> None:
     train_adl = transforms(train_adl)
     test_adl = transforms(test_adl)
 
-    # 5. Extract sliding window features & combine
-    train_emg_feats = get_features(train_emg, WINDOW_SIZE, INCREMENT_SIZE)
-    test_emg_feats = get_features(test_emg, WINDOW_SIZE, INCREMENT_SIZE)
-    train_adl_feats = get_features(train_adl, WINDOW_SIZE, INCREMENT_SIZE)
-    test_adl_feats = get_features(test_adl, WINDOW_SIZE, INCREMENT_SIZE)
-
-    train = train_emg_feats.combine(train_adl_feats)
-    test = test_emg_feats.combine(test_adl_feats)
+    # 5. Combine raw EMG & ADL datasets
+    train = train_emg.combine(train_adl)
+    test = test_emg.combine(test_adl)
 
     # 6. Track metadata and summary
     held_out_subjects = np.unique(test_emg.subjects).tolist()
@@ -89,15 +83,19 @@ def main() -> None:
     print(f"Held-out test subject IDs ({len(held_out_subjects)} subjects): {held_out_subjects}")
     print(f"Training EPN subjects ({len(ids.emg)} subjects): {ids.emg}")
     print(f"Training ADL subjects ({len(ids.disco)} subjects): {ids.disco}")
-    print(f"Final training set: {len(train)} samples ({len(train_emg_feats)} gestures + {len(train_adl_feats)} ADL)")
-    print(f"Final testing set:  {len(test)} samples ({len(test_emg_feats)} gestures + {len(test_adl_feats)} ADL)")
+    print(f"Final training set: {len(train)} samples ({len(train_emg)} gestures + {len(train_adl)} ADL)")
+    print(f"Final testing set:  {len(test)} samples ({len(test_emg)} gestures + {len(test_adl)} ADL)")
 
     # 7. Train classifier
     model_config = DiscreteClassifierConfig(
         n_classes=n_classes,
+        window_size=WINDOW_SIZE,
+        increment=INCREMENT_SIZE,
         gestures=[TARGET_GESTURE] if TARGET_GESTURE else list(gesture_mapping.keys()),
     )
-    train_model(train, test, model_config, customers=ids)
+    model = DiscreteModel(model_config)
+    model.fit(train, test, customers=ids)
+
 
 
 if __name__ == "__main__":

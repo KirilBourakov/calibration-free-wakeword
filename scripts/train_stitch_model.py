@@ -2,9 +2,8 @@ import numpy as np
 
 from mci_wake.data import load_raw_data, preprocess_nm_data
 from mci_wake.data.generation import generate_training_data
-from mci_wake.data.processing import get_features
-from mci_wake.model.neural import DiscreteClassifierConfig, train_model
-from mci_wake.model.neural.classifier import TrainData
+from mci_wake.data.types import TrainData
+from mci_wake.model.neural import DiscreteClassifierConfig, DiscreteModel
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
@@ -48,13 +47,11 @@ def main() -> None:
         f"Test set:  {len(test_data)} samples ({np.sum(test_data.labels == 1)} positive, {np.sum(test_data.labels == 0)} negative)"
     )
 
-    # 5. Extract Sliding Subwindow Features
-    train_feats = get_features(train_data, WINDOW_SIZE, INCREMENT_SIZE)
-    test_feats = get_features(test_data, WINDOW_SIZE, INCREMENT_SIZE)
-
-    # 6. Train the model using PyTorch Lightning
+    # 5. Train the model using PyTorch Lightning (DiscreteModel handles window slicing)
     model_config = DiscreteClassifierConfig(
         n_classes=2,
+        window_size=WINDOW_SIZE,
+        increment=INCREMENT_SIZE,
         type="GRU",
         temporal_hidden_size=128,
         temporal_layers=3,
@@ -67,7 +64,8 @@ def main() -> None:
         disco=[f"S{s.item() if hasattr(s, 'item') else s}" for s in np.unique(train_adl.subjects).tolist()],
     )
 
-    train_model(train_feats, test_feats, model_config, customers=train_sub_data)
+    model = DiscreteModel(model_config)
+    model.fit(train_data, test_data, customers=train_sub_data)
 
 
 if __name__ == "__main__":

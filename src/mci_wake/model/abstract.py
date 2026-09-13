@@ -2,6 +2,10 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 
+import numpy as np
+import numpy.typing as npt
+
+
 class AbstractModel(ABC):
     @property
     @abstractmethod
@@ -10,7 +14,7 @@ class AbstractModel(ABC):
         ...
 
     @abstractmethod
-    def predict(self, data: Any, **kwargs: Any) -> int:
+    def predict(self, data: npt.NDArray[np.float32], **kwargs: Any) -> int:
         """
         Make a prediction on the provided windowed features / EMG data.
 

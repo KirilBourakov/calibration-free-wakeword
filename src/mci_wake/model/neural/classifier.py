@@ -3,7 +3,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import torch
+
 import torch.nn as nn
 from pydantic import Field, TypeAdapter
 from pydantic.dataclasses import dataclass
@@ -53,52 +55,9 @@ class DiscreteModel(AbstractModel):
         self.device = device
         self.net = net if net is not None else _DiscreteClassifierNet(self.config)
         self.net.to(self.device)
-        self.window_size = self.config.window_size
-        self.increment = self.config.increment
-        self.template_size = self.config.template_size
 
-    @property
-    def n_classes(self) -> int:
-        return self.config.n_classes
-
-    def _prepare_input(self, data: Any, device: str | None = None) -> torch.Tensor:
-        """
-        Converts raw EMG (2D) or pre-windowed EMG (3D/4D) into a 4D batch tensor:
-        (1, seq_len, channels, window_size) on target device.
-        """
-        dev = device or self.device
-
-        # Handle torch tensor
-        if hasattr(data, 'detach'):
-            data = data.detach().cpu().numpy()
-
-        arr = np.asarray(data, dtype=np.float32)
-
-        # 2D raw EMG: shape (timepoints, channels) -> slice into subwindows
-        if arr.ndim == 2:
-            # If channels first (channels, timepoints), transpose to (timepoints, channels)
-            if arr.shape[0] == self.config.emg_size[1] and arr.shape[1] > arr.shape[0]:
-                arr = arr.T
-            windows = get_windows(arr, self.window_size, self.increment).astype(np.float32)
-            # windows shape: (n_windows, channels, window_size)
-            tensor = torch.tensor(windows[None], dtype=torch.float32).to(dev)
-            return tensor
-
-        # 3D pre-sliced windows: shape (n_windows, channels, window_size)
-        if arr.ndim == 3:
-            tensor = torch.tensor(arr[None], dtype=torch.float32).to(dev)
-            return tensor
-
-        # 4D already batched: shape (batch, n_windows, channels, window_size)
-        if arr.ndim == 4:
-            return torch.tensor(arr, dtype=torch.float32).to(dev)
-
-        raise ValueError(f"Expected 2D, 3D, or 4D EMG array, got shape {arr.shape}")
-
-    def predict(self, data: Any, device: str | None = None) -> int:
-        """
-        Takes raw EMG segment (time, channels) or pre-sliced windows and returns predicted class.
-        """
+    def predict(self, data: npt.NDArray[np.float32], device: str | None = None) -> int:
+        """Takes raw EMG segment (time, channels) and returns predicted class."""
         tensor = self._prepare_input(data, device=device)
         self.net.eval()
         with torch.no_grad():
@@ -106,25 +65,18 @@ class DiscreteModel(AbstractModel):
             pred = output.argmax(dim=1).item()
         return pred
 
-    def predict_logits(self, data: Any, device: str | None = None) -> torch.Tensor:
-        """
-        Returns raw output logits for analysis / visualization.
-        """
+    def predict_logits(self, data: npt.NDArray[np.float32], device: str | None = None) -> torch.Tensor:
+        """Returns raw output logits for analysis / visualization."""
         tensor = self._prepare_input(data, device=device)
         self.net.eval()
         with torch.no_grad():
             return self.net.forward_once(tensor)
 
-    def reset(self) -> None:
-        """Stateless across calls (temporal state is contained within the sliding window)."""
-        pass
-
     def fit(
         self,
         train: EmgDataset,
         test: EmgDataset,
-        customers: TrainData | None = None,
-        **kwargs: Any,
+        customers: TrainData | None = None
     ) -> "DiscreteModel":
         """
         Trains the internal neural network using PyTorch Lightning.
@@ -132,18 +84,16 @@ class DiscreteModel(AbstractModel):
         """
         from mci_wake.model.neural.training import train_model
 
-        # Check if train dataset needs windowing
-        if len(train) > 0 and train.data[0].ndim == 2:
-            from mci_wake.data.processing import get_features
-            train = get_features(train, self.window_size, self.increment)
-            test = get_features(test, self.window_size, self.increment)
+        # Window data set
+        train = self._get_windows(train)
+        test = self._get_windows(test)
 
+        # Train
         trained_model = train_model(
             train=train,
             test=test,
             model_config=self.config,
-            customers=customers,
-            **kwargs,
+            customers=customers
         )
         self.net = trained_model.net
         self.config = trained_model.config
@@ -160,7 +110,6 @@ class DiscreteModel(AbstractModel):
 
         torch.save(self.net.state_dict(), path / _STATE_DICT_NAME)
 
-
     @classmethod
     def load(cls, path: str | Path, device: str = 'cpu') -> "DiscreteModel":
         """Loads model from a directory containing config.json and state.pt."""
@@ -176,7 +125,6 @@ class DiscreteModel(AbstractModel):
 
         return model
 
-
     @classmethod
     def load_from_checkpoint(
         cls, ckpt_path: str | Path, device: str = 'cpu', weights_only: bool = False
@@ -184,10 +132,7 @@ class DiscreteModel(AbstractModel):
         """Loads trained weights directly from a PyTorch Lightning .ckpt checkpoint."""
         from mci_wake.model.neural.lightning_module import DiscreteLightningModule
 
-        try:
-            torch.serialization.add_safe_globals([DiscreteClassifierConfig, cls, TrainData])
-        except Exception:
-            pass
+        torch.serialization.add_safe_globals([DiscreteClassifierConfig, cls, TrainData])
 
         lightning_module = DiscreteLightningModule.load_from_checkpoint(
             str(ckpt_path), map_location=device, weights_only=weights_only
@@ -205,6 +150,28 @@ class DiscreteModel(AbstractModel):
     def set_train_mode(self, mode: bool = True) -> "DiscreteModel":
         self.net.train(mode)
         return self
+
+    @property
+    def n_classes(self) -> int:
+        return self.config.n_classes
+
+    def _get_windows(self, data: EmgDataset) -> EmgDataset:
+        """Extracts sliding windows from an EmgDataset using this model's configuration."""
+        windowed_data = [
+            get_windows(d, self.config.window_size, self.config.increment).astype(np.float32)
+            for d in data.data
+        ]
+        return EmgDataset(
+            data=windowed_data,
+            labels=data.labels.copy(),
+            subjects=data.subjects.copy(),
+            is_normalized=data.is_normalized,
+        )
+
+    def _prepare_input(self, data: npt.NDArray[np.float32], device: str | None = None) -> torch.Tensor:
+        """Extract sliding windows from ndarray"""
+        windows = get_windows(data, self.config.window_size, self.config.increment).astype(np.float32)
+        return torch.tensor(windows[None], dtype=torch.float32, device=device or self.device)
 
 
 class _DiscreteClassifierNet(nn.Module):
