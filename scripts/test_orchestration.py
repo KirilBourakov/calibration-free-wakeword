@@ -11,11 +11,12 @@ from mci_wake.data_handler.stitching import StitchingDataHandler
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
+from mci_wake.utils.io import modelpath
 
 
 def get_models() -> tuple[DiscreteClassifier, ...]:
     model1 = DiscreteLightningModule.load_from_checkpoint(
-        r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_9\checkpoints\best-model-epoch=07-val_acc=1.00.ckpt"
+        modelpath(8)
     )
     # model2 = DiscreteLightningModule.load_from_checkpoint(
     #     r"D:\Coding\calibration-free-wakeword\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
