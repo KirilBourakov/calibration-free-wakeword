@@ -4,6 +4,7 @@ import threading
 import torch
 
 from mci_wake.data import filter_training, load_raw_data
+from mci_wake.model.lite import MiniRocketModel
 from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig, TrainData
 from mci_wake.orchestration import ModelCascade
 from mci_wake.orchestration.model_chain import ModelChain
@@ -15,7 +16,7 @@ from mci_wake.utils.io import modelpath
 
 
 def get_models() -> tuple[DiscreteModel, ...]:
-    model1 = DiscreteModel.load_from_checkpoint(modelpath(10))
+    model1 = DiscreteModel.load_from_checkpoint(modelpath(11))
     return (model1,)
 
 
@@ -61,13 +62,13 @@ def main():
         stats_thread = threading.Thread(target=print_stats_periodically, daemon=True)
         stats_thread.start()
 
-        discrete = ModelChain(handler, 10, 5, list(models), transforms=None)
+        discrete = ModelChain(handler, list(models), transforms=None)
         discrete.run()
     else:
         print(f"Running fast simulation for {args.duration} simulated seconds...")
         start_t = time.time()
-        # discrete = ModelChain(handler, 10, 5, list(models), transforms=None, verbose=False)
-        discrete = ModelCascade(handler, )
+        discrete = ModelChain(handler, list(models), transforms=None, verbose=False)
+        # discrete = ModelCascade(handler, template_size=650, light_model=MiniRocketModel.load(r"D:\Coding\calibration-free-wakeword\scripts\models\out.pkl"), heavy_model=DiscreteModel.load_from_checkpoint(modelpath(8)))
         discrete.run(duration_sec=args.duration)
         elapsed = time.time() - start_t
         print(f"Simulation completed in {elapsed:.2f} seconds wall-clock time!")

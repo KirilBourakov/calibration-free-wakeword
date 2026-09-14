@@ -1,2 +1,3 @@
-lightning_logs
 dataset.pkl
+lightning_logs/*
+!lightning_logs/version_11/

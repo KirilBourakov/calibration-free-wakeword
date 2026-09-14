@@ -69,7 +69,7 @@ class MiniRocketModel(AbstractModel):
         rocket_features = self.trf.transform(windows)
         proba = self.clf.predict_proba(rocket_features)[:, 1]
         score = proba.max() if self.config.window_agg == "max" else proba.mean()
-        return int(score > self.config.decision_threshold)
+        return int(score > 0.5)
 
     def save(self, path: str | Path) -> None:
         joblib.dump({"config": self.config, "trf": self.trf, "clf": self.clf, "fitted": self._fitted}, path)

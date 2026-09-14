@@ -2,7 +2,9 @@ import torch
 
 from mci_wake.data import load_raw_data
 from mci_wake.data_handler.online import CompatibleOnlineDataHandler
+from mci_wake.model.lite import MiniRocketModel
 from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig, TrainData
+from mci_wake.orchestration import ModelCascade
 from mci_wake.orchestration.model_chain import ModelChain
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
@@ -18,12 +20,17 @@ if __name__ == "__main__":
     transforms = Transform(HighPassFilter(), RestNormalizer())
     transforms.fit(emg)
 
-    model1 = DiscreteModel.load_from_checkpoint(modelpath(10))
-
     # model2 = DiscreteModel.load_from_checkpoint(
     #     r"D:\Coding\calibration-free-wakeword\mci_wake\scripts\lightning_logs\version_0\checkpoints\best-model-epoch=09-val_acc=0.99.ckpt"
     # )
 
-    discrete = ModelChain(CompatibleOnlineDataHandler(), 10, 5, [model1], transforms=transforms)
+    discrete = ModelChain(CompatibleOnlineDataHandler(), [DiscreteModel.load_from_checkpoint(modelpath(11))], transforms=transforms)
+    # discrete = ModelCascade(
+    #     CompatibleOnlineDataHandler(),
+    #     template_size=650,
+    #     light_model=MiniRocketModel.load( r"D:\Coding\calibration-free-wakeword\scripts\models\rocketpinchfist.pkl"),
+    #     heavy_model=DiscreteModel.load_from_checkpoint(modelpath(8))
+    # )
+
     discrete.run()
 

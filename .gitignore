@@ -14,9 +14,8 @@ env/
 # Data, Logs & Recordings
 *.pkl
 dataset.pkl
-lightning_logs/
+/lightning_logs/
 recordings/
-checkpoints/
 
 # OS / IDE
 .DS_Store

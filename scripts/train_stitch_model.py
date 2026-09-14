@@ -3,7 +3,7 @@ import numpy as np
 from mci_wake.data import load_raw_data, preprocess_nm_data
 from mci_wake.data.generation import generate_training_data
 from mci_wake.data.types import TrainData
-from mci_wake.model.lite import MiniRocketModel
+from mci_wake.model.lite import MiniRocketModel, MiniRocketConfig
 from mci_wake.model.neural import DiscreteClassifierConfig, DiscreteModel
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
@@ -66,9 +66,9 @@ def main() -> None:
     )
 
     # model = DiscreteModel(model_config)
-    model = MiniRocketModel()
+    model = MiniRocketModel(MiniRocketConfig(window_size=650))
     model.fit(train_data.reduce_proportional(30000, (.75, .25)), test_data, customers=train_sub_data)
-    model.save(r"D:\Coding\calibration-free-wakeword\scripts\models\out.json")
+    model.save(r"D:\Coding\calibration-free-wakeword\scripts\models\out.pkl")
 
 
 if __name__ == "__main__":

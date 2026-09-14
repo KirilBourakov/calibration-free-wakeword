@@ -12,16 +12,12 @@ class ModelState:
     def __init__(
         self,
         model: AbstractModel,
-        window_size: int = 10,
-        increment: int = 5,
         buffer_size: int = 5,
         transforms: Transform | None = None,
     ):
         n_classes = getattr(model, "n_classes", getattr(getattr(model, "config", None), "n_classes", None))
         assert n_classes == 2, f"Model must have 2 classes, got {n_classes}"
         self.model = model
-        self.window_size = window_size
-        self.increment = increment
         self.buffer_size = buffer_size
         self.transforms = transforms
         self.buffer: list[int] = []
@@ -52,46 +48,44 @@ class ModelChain:
     ----------
     odh: AbstractDataHandler
         The online data handler object for streaming EMG data.
-    window_size: int
-        The window size (in samples) to use for splitting up each template.
-    increment: int
-        The increment size (in samples) for the sliding window.
     models: list[AbstractModel]
         The trained models for sequence detection.
     buffer: int, optional
         The size of the prediction buffer to use for mode filtering. Default is 5.
     template_size: int, optional
-        The size of each EMG template (in samples). Default is 250 (1.5s for the Myo Armband).
+        The size of each EMG template (in samples) passed to the models. Default is 250 (1.25s for the Myo Armband).
     min_template_size: int, optional
         The minimum number of samples required before starting to make predictions. Default is 150.
-    debug: bool, optional
-        If True, enables debug mode with additional print statements. Default is True.
+    sequence_timeout: float, optional
+        Seconds before chained sequence resets. Default is 2.0.
+    step_samples: int, optional
+        Number of samples to advance the simulation per loop tick in offline mode. Default is 5.
+    transforms: Transform | None, optional
+        Optional transforms applied to the EMG data before prediction.
+    verbose: bool, optional
+        If True, prints state transitions. Default is True.
     """
 
     def __init__(
         self,
         odh: AbstractDataHandler,
-        window_size: int,
-        increment: int,
         models: list[AbstractModel],
-        buffer=5,
-        template_size=250,
-        min_template_size=150,
-        sequence_timeout = 2.0,
-        debug=True,
+        buffer: int = 5,
+        template_size: int = 250,
+        min_template_size: int = 150,
+        sequence_timeout: float = 2.0,
+        step_samples: int = 5,
         transforms: Transform | None = None,
-        verbose=True
+        verbose: bool = True,
     ):
         self.odh = odh
-        self.window_size = window_size
-        self.increment = increment
+        self.models = [ModelState(m, buffer_size=buffer, transforms=transforms) for m in models]
         self.buffer_size = buffer
-        self.verbose = verbose
-        self.models = [ModelState(m, window_size, increment, buffer, transforms=transforms) for m in models]
         self.template_size = template_size
         self.min_template_size = min_template_size
         self.sequence_timeout = sequence_timeout
-        self.debug = debug
+        self.step_samples = step_samples
+        self.verbose = verbose
         self.running = False
 
     def stop(self) -> None:
@@ -116,10 +110,10 @@ class ModelChain:
 
             if self.odh.is_offline:
                 assert isinstance(self.odh, OfflineCapableAbstractDataHandler)
-                self.odh.advance(self.increment)
+                self.odh.advance(self.step_samples)
 
             # Get and process EMG data
-            dh_out = self.odh.get_data(self.window_size)
+            dh_out = self.odh.get_data(1)
             # offline emg has run out of data
             if dh_out.count >= expected_count:
                 # Fetch and reverse

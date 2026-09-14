@@ -14,26 +14,22 @@ class ModelCascade:
     ----------
     odh: AbstractDataHandler
         The online data handler object for streaming EMG data.
-    window_size: int
-        The window size (in samples) to use for splitting up each template.
-    increment: int
-        The increment size (in samples) for the sliding window.
     light_model: AbstractModel
         Fast model that scans the stream continuously (must have 2 classes).
     heavy_model: AbstractModel
         Accurate model invoked only to verify candidates (must have 2 classes).
     buffer: int, optional
-        The size of the prediction buffer to use for mode filtering.
+        The size of the prediction buffer to use for mode filtering. Default is 5.
     template_size: int, optional
-        The size of each EMG template (in samples).
+        The size of each EMG template (in samples) passed to the models. Default is 250.
     min_template_size: int, optional
         The minimum number of samples required before starting predictions. Default is 150.
     verification_steps: int, optional
-        Number of heavy-model attempts to confirm a candidate before rejection.
+        Number of heavy-model attempts to confirm a candidate before rejection. Default is 3.
     reject_cooldown: float, optional
-        Seconds to ignore light-model triggers after a rejection.
-    debug: bool, optional
-        If True, enables debug mode. Default is True.
+        Seconds to ignore light-model triggers after a rejection. Default is 0.25.
+    step_samples: int, optional
+        Number of samples to advance the simulation per loop tick in offline mode. Default is 5.
     transforms: Transform | None, optional
         Optional transforms applied before feature extraction.
     verbose: bool, optional
@@ -43,35 +39,30 @@ class ModelCascade:
     def __init__(
         self,
         odh: AbstractDataHandler,
-        window_size: int,
-        increment: int,
         light_model: AbstractModel,
         heavy_model: AbstractModel,
-        buffer=5,
-        template_size=250,
-        min_template_size=150,
-        verification_steps=3,
-        reject_cooldown=0.25,
-        debug=True,
+        buffer: int = 5,
+        template_size: int = 250,
+        min_template_size: int = 150,
+        verification_steps: int = 3,
+        reject_cooldown: float = 0.25,
+        step_samples: int = 5,
         transforms: Transform | None = None,
-        verbose=True,
+        verbose: bool = True,
     ):
         assert verification_steps >= 1, "Verification steps must be >= 1."
 
         self.odh = odh
-        self.window_size = window_size
-        self.increment = increment
+        self.light = ModelState(light_model, buffer_size=buffer, transforms=transforms)
+        self.heavy = ModelState(heavy_model, buffer_size=min(buffer, verification_steps), transforms=transforms)
+
         self.buffer_size = buffer
-        self.verbose = verbose
-
-        self.light = ModelState(light_model, window_size, increment, buffer, transforms=transforms)
-        self.heavy = ModelState(heavy_model, window_size, increment, min(buffer, verification_steps), transforms=transforms)
-
         self.template_size = template_size
         self.min_template_size = min_template_size
         self.verification_steps = verification_steps
         self.reject_cooldown = reject_cooldown
-        self.debug = debug
+        self.step_samples = step_samples
+        self.verbose = verbose
         self.running = False
 
     def stop(self) -> None:
@@ -97,9 +88,9 @@ class ModelCascade:
 
             if self.odh.is_offline:
                 assert isinstance(self.odh, OfflineCapableAbstractDataHandler)
-                self.odh.advance(self.increment)
+                self.odh.advance(self.step_samples)
 
-            dh_out = self.odh.get_data(self.window_size)
+            dh_out = self.odh.get_data(1)
 
             if dh_out.count >= expected_count:
                 # --- SCANNING: light model watches the stream ---

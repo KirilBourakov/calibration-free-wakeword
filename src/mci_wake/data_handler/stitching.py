@@ -246,7 +246,7 @@ class StitchingDataHandler(OfflineCapableAbstractDataHandler):
         else:
             # Test case: Lead with 0-0.25s of no-gesture, followed by gesture sequence with 0-0.75s no-gesture gaps
             is_test_case = True
-            segments = self.get_sequence_segments(self.gesture_sequence, max_duration_between=.1)
+            segments = self.get_sequence_segments(self.gesture_sequence, max_duration_between=.1) # TODO: customize gaps?
 
         return segments, is_test_case
 
