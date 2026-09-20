@@ -1,5 +1,6 @@
 import random
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -81,7 +82,7 @@ class DiscreteModel(AbstractModel):
         Trains the internal neural network using PyTorch Lightning.
         Automatically slices raw EMG trials into sliding windows if not already windowed.
         """
-        from mci_wake.model.heavy.neural.training import train_model
+        from mci_wake.model.neural.training import train_model
 
         # Window data set
         train = self._get_windows(train)
@@ -129,7 +130,7 @@ class DiscreteModel(AbstractModel):
         cls, ckpt_path: str | Path, device: str = 'cpu', weights_only: bool = False
     ) -> "DiscreteModel":
         """Loads trained weights directly from a PyTorch Lightning .ckpt checkpoint."""
-        from mci_wake.model.heavy.neural.lightning_module import DiscreteLightningModule
+        from mci_wake.model.neural.lightning_module import DiscreteLightningModule
 
         torch.serialization.add_safe_globals([DiscreteClassifierConfig, cls, TrainData])
 

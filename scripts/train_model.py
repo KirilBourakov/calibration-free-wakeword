@@ -10,7 +10,7 @@ from mci_wake.data import (
     load_raw_data,
     preprocess_nm_data,
 )
-from mci_wake.model.heavy.neural import DiscreteModel, DiscreteClassifierConfig
+from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig
 from mci_wake.transform.highpass import HighPassFilter
 
 from mci_wake.transform.rest_normalization import RestNormalizer

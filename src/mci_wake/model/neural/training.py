@@ -1,7 +1,7 @@
 import os
 from dataclasses import fields
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import yaml
@@ -11,13 +11,13 @@ from lightning import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint
 
 from mci_wake.data.types import EmgDataset, gesture_mapping
-from mci_wake.model.heavy.neural.classifier import (
+from mci_wake.model.neural.classifier import (
     DiscreteClassifierConfig,
     DiscreteModel,
     TrainData,
     make_data_loader, _DiscreteClassifierNet,
 )
-from mci_wake.model.heavy.neural.lightning_module import DiscreteLightningModule
+from mci_wake.model.neural.lightning_module import DiscreteLightningModule
 
 
 def train_model(
