@@ -2,9 +2,7 @@ import torch
 
 from mci_wake.data import load_raw_data
 from mci_wake.data_handler.online import CompatibleOnlineDataHandler
-from mci_wake.model.lite import MiniRocketModel
-from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig, TrainData
-from mci_wake.orchestration import ModelCascade
+from mci_wake.model.heavy.neural import DiscreteModel, DiscreteClassifierConfig, TrainData
 from mci_wake.orchestration.model_chain import ModelChain
 from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer

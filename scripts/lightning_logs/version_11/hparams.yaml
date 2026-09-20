@@ -1,4 +1,4 @@
-defn: !!python/object:mci_wake.model.neural.classifier.DiscreteClassifierConfig
+defn: !!python/object:mci_wake.model.heavy.neural.classifier.DiscreteClassifierConfig
   conv_kernel_sizes:
   - 3
   - 3

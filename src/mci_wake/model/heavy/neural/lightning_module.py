@@ -2,7 +2,7 @@ import lightning as light
 import torch
 from torch.nn.functional import cross_entropy
 
-from mci_wake.model.neural.classifier import (
+from mci_wake.model.heavy.neural.classifier import (
     DiscreteClassifierConfig,
     DiscreteModel,
     _DiscreteClassifierNet,

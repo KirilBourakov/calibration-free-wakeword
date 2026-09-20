@@ -21,8 +21,8 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from mci_wake.data import gesture_mapping, load_raw_data
-from mci_wake.model.neural import DiscreteModel, DiscreteClassifierConfig
-from mci_wake.model.neural.io import load
+from mci_wake.model.heavy.neural import DiscreteModel, DiscreteClassifierConfig
+from mci_wake.model.heavy.neural.io import load
 from mci_wake.data_handler.stitching import StitchingDataHandler
 from libemg.utils import get_windows
 
