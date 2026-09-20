@@ -66,8 +66,8 @@ def main() -> None:
 
     # model = DiscreteModel(model_config)
     model = MiniRocketModel(MiniRocketConfig(window_size=650))
-    model.fit(train_data.reduce_proportional(30000, (.75, .25)), test_data, customers=train_sub_data)
-    model.save(r"D:\Coding\calibration-free-wakeword\scripts\models\out.pkl")
+    model.fit(train_data.reduce_proportional(1000, (.75, .25)), test_data, customers=train_sub_data)
+    model.save()
 
 
 if __name__ == "__main__":

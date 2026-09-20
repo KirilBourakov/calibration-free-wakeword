@@ -98,7 +98,7 @@ class DiscreteModel(AbstractModel):
         self.config = trained_model.config
         return self
 
-    def save(self, path: str | Path) -> None:
+    def _save(self, path: str | Path) -> None:
         """Saves model configuration and weights to a directory."""
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)

@@ -71,7 +71,7 @@ class MiniRocketModel(AbstractModel):
         score = proba.max() if self.config.window_agg == "max" else proba.mean()
         return int(score > 0.5)
 
-    def save(self, path: str | Path) -> None:
+    def _save(self, path: str | Path) -> None:
         joblib.dump({"config": self.config, "trf": self.trf, "clf": self.clf, "fitted": self._fitted}, path)
 
     @classmethod

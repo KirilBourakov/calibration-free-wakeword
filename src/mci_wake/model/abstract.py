@@ -1,3 +1,4 @@
+from datetime import datetime
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -59,11 +60,20 @@ class AbstractModel(ABC):
         """
         pass
 
-    @abstractmethod
-    def save(self, path: str | Path) -> None:
+    def save(self, path: str | Path | None = None) -> None:
         """
         Save model weights and configuration to the specified path or directory.
         """
+        if path is None:
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            output_dir = Path("models")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            path = output_dir / f"{self.__class__.__name__}-{timestamp}.pkl"
+        self._save(path)
+
+    @abstractmethod
+    def _save(self, path: str | Path) -> None:
+        """Model saving implementation."""
         ...
 
     def eval(self) -> "AbstractModel":
