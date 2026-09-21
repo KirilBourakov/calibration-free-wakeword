@@ -16,8 +16,9 @@ from mci_wake.utils.io import modelpath
 
 
 def get_models() -> tuple[DiscreteModel, ...]:
-    model1 = DiscreteModel.load_from_checkpoint(modelpath(11))
-    return (model1,)
+    model1 = DiscreteModel.load_from_checkpoint(modelpath(12))
+    model2 = DiscreteModel.load_from_checkpoint(modelpath(11))
+    return model1, model2
 
 
 def main():
@@ -32,7 +33,7 @@ def main():
 
     models = get_models()
     emg, adl = filter_training(
-        *load_raw_data(), # *[m.config.customers for m in models]
+        *load_raw_data(), *[m.config.customers for m in models]
     )
 
     transforms = Transform(HighPassFilter(), RestNormalizer())
@@ -67,8 +68,8 @@ def main():
     else:
         print(f"Running fast simulation for {args.duration} simulated seconds...")
         start_t = time.time()
-        discrete = ModelChain(handler, list(models), transforms=None, verbose=False)
-        # discrete = ModelCascade(handler, template_size=650, light_model=MiniRocketModel.load(r"D:\Coding\calibration-free-wakeword\scripts\models\out.pkl"), heavy_model=DiscreteModel.load_from_checkpoint(modelpath(8)))
+        # discrete = ModelChain(handler, list(models), transforms=None, verbose=False)
+        discrete = ModelCascade(handler, light_model=models[0], heavy_model=models[1])
         discrete.run(duration_sec=args.duration)
         elapsed = time.time() - start_t
         print(f"Simulation completed in {elapsed:.2f} seconds wall-clock time!")

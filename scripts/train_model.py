@@ -87,7 +87,7 @@ def main() -> None:
     print(f"Final testing set:  {len(test)} samples ({len(test_emg)} gestures + {len(test_adl)} ADL)")
 
     # 7. Train classifier
-    model_config = DiscreteClassifierConfig(
+    model_config = DiscreteClassifierConfig.default_lite().create(
         n_classes=n_classes,
         window_size=WINDOW_SIZE,
         increment=INCREMENT_SIZE,

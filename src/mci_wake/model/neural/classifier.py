@@ -1,4 +1,5 @@
 import random
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -15,26 +16,54 @@ from torch.utils.data import DataLoader, Dataset
 from libemg.utils import get_windows
 from mci_wake.data.types import EmgDataset, TrainData
 from mci_wake.model.abstract import AbstractModel
+from mci_wake.utils.hybrid import hybrid_method
 
 _CONFIG_NAME = 'config.json'
 _STATE_DICT_NAME = 'state.pt'
 
 @dataclass
 class DiscreteClassifierConfig:
+    # Data Processing
     emg_size: tuple[int, int, int] = (32, 8, 10)
     window_size: int = 10
     increment: int = 5
-    template_size: int = 250
-    temporal_hidden_size: int = 128
-    temporal_layers: int = 3
-    mlp_layers: list[int] = Field(default_factory=lambda: [128, 64, 32])
-    n_classes: int = 6
-    type: str = 'GRU'
+    template_size: int = 250 # todo: remove
+
+    # Model Structure (CNN -> Recurrent -> MLP)
     conv_kernel_sizes: list[int] = Field(default_factory=lambda: [3, 3, 3])
     conv_out_channels: list[int] = Field(default_factory=lambda: [16, 32, 64])
+
+    type: str = 'GRU'
+    temporal_hidden_size: int = 128
+    temporal_layers: int = 3
+
+    mlp_layers: list[int] = Field(default_factory=lambda: [128, 64, 32])
+    n_classes: int = 6
+
+    # Training Config
     lr: float = 1e-3
+
+    # Meta Data
     customers: TrainData = Field(default_factory=TrainData)
     gestures: list[str] = Field(default_factory=list)
+
+    @hybrid_method
+    def create(self, **kwargs) -> "DiscreteClassifierConfig":
+        if isinstance(self, type):
+            return DiscreteClassifierConfig(**kwargs)
+        else:
+            return replace(
+                self,
+                **kwargs,
+            )
+
+    @classmethod
+    def default_lite(cls) -> "DiscreteClassifierConfig":
+        return DiscreteClassifierConfig(
+            temporal_hidden_size=64,
+            temporal_layers=1,
+            mlp_layers=[64, 32, 16],
+        )
 
     @property
     def file_name(self):

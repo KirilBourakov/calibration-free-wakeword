@@ -9,7 +9,7 @@ from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
 
-TARGET_SEQUENCE = ["pinch", "fist"]
+TARGET_SEQUENCE = ["waveIn", "waveOut"]
 WINDOW_SIZE: int = 10
 INCREMENT_SIZE: int = 5
 TEST_SUBJECT_RATIO: float = 0.1
@@ -48,26 +48,21 @@ def main() -> None:
         f"Test set:  {len(test_data)} samples ({np.sum(test_data.labels == 1)} positive, {np.sum(test_data.labels == 0)} negative)"
     )
 
-    # 5. Train the model using PyTorch Lightning (DiscreteModel handles window slicing)
-    # model_config = DiscreteClassifierConfig(
-    #     n_classes=2,
-    #     window_size=10,
-    #     increment=5,
-    #     type="GRU",
-    #     temporal_hidden_size=128,
-    #     temporal_layers=3,
-    #     lr=1e-3,
-    #     gestures=TARGET_SEQUENCE,
-    # )
-    #
+    # 5. Train the model using PyTorch Lightning
+    model_config = DiscreteClassifierConfig.default_lite().create(
+        n_classes=2,
+        window_size=10,
+        increment=5,
+        gestures=TARGET_SEQUENCE
+    )
     train_sub_data = TrainData(
         emg=[f"user{s.item() if hasattr(s, 'item') else s}" for s in np.unique(train_emg.subjects).tolist()],
         disco=[f"S{s.item() if hasattr(s, 'item') else s}" for s in np.unique(train_adl.subjects).tolist()],
     )
 
-    # model = DiscreteModel(model_config)
-    model = MiniRocketModel(MiniRocketConfig(window_size=650))
-    model.fit(train_data.reduce_proportional(1000, (.75, .25)), test_data, customers=train_sub_data)
+    model = DiscreteModel(model_config)
+    # model = MiniRocketModel(MiniRocketConfig(window_size=650))
+    model.fit(train_data, test_data, customers=train_sub_data)
     model.save()
 
 
