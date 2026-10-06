@@ -4,7 +4,7 @@ from typing import Union, Any, Optional, Tuple, List, Dict
 import numpy as np
 from numpy import typing as npt
 
-from mci_wake.data.types import EmgDataset, TrainData
+from mci_wake.data.types import AdlDataset, EmgDataset, TrainData
 
 
 
@@ -26,9 +26,9 @@ def _parse_subject_id(val: Union[int, str, Any]) -> Optional[int]:
 
 def filter_training(
     emg_data: EmgDataset,
-    adl_data: EmgDataset,
+    adl_data: AdlDataset,
     *train_datas: TrainData,
-) -> Tuple[EmgDataset, EmgDataset]:
+) -> Tuple[EmgDataset, AdlDataset]:
     """Filters out raw dataset samples corresponding to subjects already present in any of the provided TrainData instances.
 
     Args:
@@ -54,23 +54,13 @@ def filter_training(
 
     if used_emg_subjects:
         emg_mask = ~np.isin(emg_data.subjects, list(used_emg_subjects))
-        filtered_emg_data = EmgDataset(
-            data=[d for d, m in zip(emg_data.data, emg_mask) if m],
-            labels=emg_data.labels[emg_mask],
-            subjects=emg_data.subjects[emg_mask],
-            is_normalized=emg_data.is_normalized,
-        )
+        filtered_emg_data = emg_data[emg_mask]
     else:
         filtered_emg_data = emg_data
 
     if used_disco_subjects:
         adl_mask = ~np.isin(adl_data.subjects, list(used_disco_subjects))
-        filtered_adl_data = EmgDataset(
-            data=[d for d, m in zip(adl_data.data, adl_mask) if m],
-            labels=adl_data.labels[adl_mask],
-            subjects=adl_data.subjects[adl_mask],
-            is_normalized=adl_data.is_normalized,
-        )
+        filtered_adl_data = adl_data[adl_mask]
     else:
         filtered_adl_data = adl_data
 

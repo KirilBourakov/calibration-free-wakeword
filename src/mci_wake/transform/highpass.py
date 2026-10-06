@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
@@ -21,11 +23,6 @@ class HighPassFilter(AbstractTransform):
 
         elif isinstance(emg, EmgDataset):
             new_data = [sosfiltfilt(self.sos, d, axis=0).astype(np.float32) for d in emg.data]
-            return EmgDataset(
-                data=new_data,
-                labels=emg.labels,
-                subjects=emg.subjects,
-                is_normalized=emg.is_normalized
-            )
+            return replace(emg, data=new_data)
 
         raise TypeError(f"Unsupported type for HighPassFilter: {type(emg)}")

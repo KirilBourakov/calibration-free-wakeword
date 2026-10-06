@@ -80,11 +80,11 @@ class EmgDataset:
             else:
                 new_data = [self.data[i] for i in idx]
 
-            return EmgDataset(
+            return replace(
+                self,
                 data=new_data,
                 labels=self.labels[idx],
                 subjects=self.subjects[idx],
-                is_normalized=self.is_normalized
             )
 
         raise TypeError(f"Invalid argument type: {type(idx)}")
@@ -95,7 +95,7 @@ class EmgDataset:
             data=self.data + other.data,
             labels=np.concatenate((self.labels, other.labels)),
             subjects=np.concatenate((self.subjects, other.subjects)),
-            is_normalized=self.is_normalized
+            is_normalized=self.is_normalized,
         )
 
     def split(
@@ -130,18 +130,8 @@ class EmgDataset:
             test_mask = np.isin(self.subjects, test_subject_ids)
             train_mask = ~test_mask
 
-            train = EmgDataset(
-                data=[d for d, m in zip(self.data, train_mask) if m],
-                labels=self.labels[train_mask],
-                subjects=self.subjects[train_mask],
-                is_normalized=self.is_normalized,
-            )
-            test = EmgDataset(
-                data=[d for d, m in zip(self.data, test_mask) if m],
-                labels=self.labels[test_mask],
-                subjects=self.subjects[test_mask],
-                is_normalized=self.is_normalized,
-            )
+            train = self[train_mask]
+            test = self[test_mask]
             return train, test
         else:
             n_train = int(len(self) * (1.0 - test_percentage))
@@ -201,14 +191,64 @@ class EmgDataset:
         ])
         keep.sort()
 
+        return self[keep]
+
+
+@dataclass(config=ConfigDict(arbitrary_types_allowed=True), frozen=True)
+class AdlDataset(EmgDataset):
+    """ADL recordings with a required activity ID parallel to each recording."""
+    activity_labels: npt.NDArray[np.int32] = Field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        if len(self.activity_labels) != len(self.data):
+            raise ValueError("activity_labels must contain one ID per ADL recording")
+
+    def permute(self) -> "AdlDataset":
+        order = np.random.permutation(len(self))
         return replace(
             self,
-            data=[self.data[i] for i in keep],
-            labels=self.labels[keep],
-            subjects=self.subjects[keep],
+            data=[self.data[i] for i in order],
+            labels=self.labels[order],
+            subjects=self.subjects[order],
+            activity_labels=self.activity_labels[order],
+        )
+
+    @overload
+    def __getitem__(self, idx: int | np.integer) -> tuple[npt.NDArray[np.float32], np.int32, np.int32]: ...
+    @overload
+    def __getitem__(self, idx: slice | list | npt.NDArray) -> "AdlDataset": ...
+    def __getitem__(self, idx: int | np.integer | slice | list | npt.NDArray) -> "AdlDataset | tuple[npt.NDArray[np.float32], np.int32, np.int32]":
+        if isinstance(idx, (int, np.integer)):
+            return self.data[idx], self.labels[idx], self.subjects[idx]
+        if isinstance(idx, (slice, list, np.ndarray)):
+            indices = np.arange(len(self))[idx]
+            return replace(
+                self,
+                data=[self.data[i] for i in np.atleast_1d(indices)],
+                labels=self.labels[idx],
+                subjects=self.subjects[idx],
+                activity_labels=self.activity_labels[idx],
+            )
+        raise TypeError(f"Invalid argument type: {type(idx)}")
+
+    def combine(self, other: EmgDataset) -> EmgDataset:
+        assert other.is_normalized == self.is_normalized, "Cannot combine EmgDatasets with different normalized states."
+        return EmgDataset(
+            data=self.data + other.data,
+            labels=np.concatenate((self.labels, other.labels)),
+            subjects=np.concatenate((self.subjects, other.subjects)),
+            is_normalized=self.is_normalized,
         )
 
 gesture_mapping: Dict[str, int] = {'noGesture': 0, 'fist': 1, 'waveIn': 2, 'waveOut': 3, 'open': 4, 'pinch': 5}
+ADL_ACTIVITY_MAPPING = {
+    "calibration_EMG": 0,
+    "other_EMG": 1,
+    "phone_EMG": 2,
+    "type_EMG": 3,
+    "walk_EMG": 4,
+    "write_EMG": 5,
+}
 
 # dir setup
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))

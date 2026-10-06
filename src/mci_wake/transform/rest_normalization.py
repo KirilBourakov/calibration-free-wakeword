@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import numpy.typing as npt
 
@@ -32,11 +34,6 @@ class RestNormalizer(AbstractTransform):
 
         elif isinstance(emg, EmgDataset):
             new_data = [(d / (self.rest_std_ + self.epsilon)).astype(np.float32) for d in emg.data]
-            return EmgDataset(
-                data=new_data,
-                labels=emg.labels,
-                subjects=emg.subjects,
-                is_normalized=True
-            )
+            return replace(emg, data=new_data, is_normalized=True)
 
         raise TypeError(f"Unsupported type for RestNormalizer: {type(emg)}")

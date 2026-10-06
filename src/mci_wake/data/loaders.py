@@ -8,10 +8,9 @@ from typing import Dict, Any, Tuple, Optional, Sequence
 import numpy as np
 from numpy import typing as npt
 
-from mci_wake.data.types import gesture_mapping, ADL_DATA, EPN_DATA, EmgDataset
+from mci_wake.data.types import AdlDataset, gesture_mapping, ADL_DATA, EPN_DATA, EmgDataset, ADL_ACTIVITY_MAPPING
 
-
-def load_raw_data(presplit_adl=True) -> tuple[EmgDataset, EmgDataset]:
+def load_raw_data(presplit_adl=True) -> tuple[EmgDataset, AdlDataset]:
     """Loads EPN and ADL datasets"""
     adl = load_disco_adls(ADL_DATA)
     if presplit_adl:
@@ -82,26 +81,41 @@ def load_epn_data(
 def load_disco_adls(
     path: Path | str,
     min_len: int = 150
-) -> EmgDataset:
+) -> AdlDataset:
     """Loads raw ADL dataset from disk, trims EMG channels, and tracks subject IDs.
 
     Args:
         path: Path to the ADL dataset root directory.
         min_len: Minimum number of rows required to keep a recording.
     Returns:
-        EmgDataset: Dataset containing ADL EMG recordings and parallel subject IDs.
+        AdlDataset: ADL recordings with participant and activity IDs.
     """
     path = Path(path)
     recordings: list[npt.NDArray[np.float32]] = []
     subject_ids: list[int] = []
+    activity_labels: list[int] = []
 
-    for s in range(1, 16):
-        sub_path = path / f"S{s}" / "ADL"
-        if not sub_path.exists():
+    # Discover participants from the dataset
+    participant_dirs = sorted(
+        (
+            (int(directory.name[1:]), directory)
+            for directory in path.iterdir()
+            if directory.is_dir()
+            and directory.name.startswith("S")
+            and directory.name[1:].isdigit()
+        ),
+        key=lambda item: item[0],
+    )
+
+    for s, participant_dir in participant_dirs:
+        sub_path = participant_dir / "ADL"
+        if not sub_path.is_dir():
             print(f"WARNING: {sub_path} doesn't exist")
             continue
 
         for file_path in sub_path.glob("*.csv"):
+            if file_path.stem not in ADL_ACTIVITY_MAPPING:
+                raise ValueError(f"Unknown ADL activity filename: {file_path.name}")
             data = np.loadtxt(file_path, delimiter=',')
 
             # Guard against 1D arrays and filter out short recordings early
@@ -109,22 +123,24 @@ def load_disco_adls(
                 # Keep only the last 8 EMG channels
                 recordings.append(np.asarray(data[:, -8:], dtype=np.float32))
                 subject_ids.append(s)
+                activity_labels.append(ADL_ACTIVITY_MAPPING[file_path.stem])
             else:
                 print(f"WARNING: skipping invalid or too short recording for user {s} ({file_path.name})")
 
-    return EmgDataset(
+    return AdlDataset(
         data=recordings,
         labels=np.zeros(len(recordings), dtype=np.int32),
         subjects=np.array(subject_ids, dtype=np.int32),
         is_normalized=False,
+        activity_labels=np.array(activity_labels, dtype=np.int32),
     )
 
 
 def split_disco_adls(
-    data: EmgDataset,
+    data: AdlDataset,
     window: tuple[int, int] = (150, 400),
     step: int = 50
-) -> EmgDataset:
+) -> AdlDataset:
     """Windows continuous EMG recordings into randomized segments while preserving subject IDs.
 
     Args:
@@ -138,8 +154,9 @@ def split_disco_adls(
 
     windows: list[npt.NDArray[np.float32]] = []
     subject_ids: list[int] = []
+    activity_labels: list[int] = []
 
-    for item, s in zip(data.data, data.subjects.tolist()):
+    for item, s, activity in zip(data.data, data.subjects.tolist(), data.activity_labels.tolist()):
         # Secondary safety check in case data is passed directly to the splitter
         if len(item) < min_window:
             continue
@@ -150,12 +167,14 @@ def split_disco_adls(
 
             windows.append(item[i : i + win_len].astype(np.float32))
             subject_ids.append(s)
+            activity_labels.append(activity)
 
-    return EmgDataset(
+    return AdlDataset(
         data=windows,
         labels=np.zeros(len(subject_ids), dtype=np.int32),
         subjects=np.array(subject_ids, dtype=np.int32),
         is_normalized=data.is_normalized,
+        activity_labels=np.array(activity_labels, dtype=np.int32),
     )
 
 def _extract_data(data: Dict[str, Any]) -> Tuple[Optional[npt.NDArray[np.float32]], Optional[int]]:
