@@ -1,15 +1,19 @@
-"""Measure how target-gesture trials per participant affect transfer.
+"""Measure how target-gesture data (participants x trials each) affects transfer.
 
 Run from the repository root with ``python -m exp.gesture_data_variation``.
-The experiment freezes a model trained without one gesture, then trains its
-output layer with a fixed number of examples of that gesture from each of an
-increasing number of participants.
+For each target gesture, a model is trained without it and frozen. A new output
+layer is then trained on cached features using ``trials`` examples of the target
+from each of ``people`` participants. Early stopping sees the same target budget
+(same trials per person, taken from validation participants), so validation never
+provides more target data than training does.
 """
 
 import argparse
+import copy
 import csv
+import itertools
 import random
-from dataclasses import dataclass
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -27,595 +31,301 @@ from mci_wake.transform.highpass import HighPassFilter
 from mci_wake.transform.rest_normalization import RestNormalizer
 from mci_wake.transform.transform import Transform
 
+PEOPLE = (10, 20, 30, 40)
+TRIALS = (5, 10, 15, 20, 25)  # each EPN participant has 25 examples per gesture
+EPN_IDS_PER_COHORT = 306
+GESTURE_WINDOW, GESTURE_INCREMENT = 10, 5
+ADL_WINDOW, ADL_STEP = 150, 100
+HEAD_BATCH, HEAD_EPOCHS, HEAD_PATIENCE = 256, 100, 12
 
-# Each EPN participant has 25 training examples per gesture.
-PARTICIPANT_COUNTS = (10, 20, 30, 40)
-TRIALS_PER_PARTICIPANT = (5, 10, 15, 20, 25)
-
-GESTURE_WINDOW_SIZE = 10
-GESTURE_WINDOW_INCREMENT = 5
-ADL_WINDOW_SIZE = 150
-ADL_WINDOW_STEP = 100
-
-HEAD_BATCH_SIZE = 256
-HEAD_MAX_EPOCHS = 100
-HEAD_EARLY_STOPPING_PATIENCE = 12
+# [(name, label)] sorted by label; noGesture is label 0.
+GESTURES = sorted(gesture_mapping.items(), key=lambda item: item[1])
 
 
-@dataclass(frozen=True)
-class ExperimentData:
-    """Participant-disjoint data splits used by the experiment."""
+def load_epn() -> EmgDataset:
+    """Load trainingSamples from both EPN cohorts, offsetting the second cohort's IDs.
 
-    train_emg: EmgDataset
-    validation_emg: EmgDataset
-    test_emg: EmgDataset
-    train_adl: EmgDataset
-    validation_adl: EmgDataset
-    test_adl: EmgDataset
-    train_adl_participants: list[int]
-    validation_adl_participants: list[int]
-    test_adl_participants: list[int]
-
-
-def combine_datasets(datasets: list[EmgDataset]) -> EmgDataset:
-    """Combine datasets in order, returning an empty dataset for no inputs."""
-    if not datasets:
-        return EmgDataset.empty()
-    result = datasets[0]
-    for dataset in datasets[1:]:
-        result = result.combine(dataset)
-    return result
-
-
-def load_epn_training_examples() -> EmgDataset:
-    """Load only trainingSamples, keeping the two EPN cohorts distinct.
-
-    EPN's trainingJSON and testingJSON folders both use participant IDs 1–306.
-    They are separate cohorts, so the second cohort's IDs are shifted by 306.
-    Loading only trainingSamples gives each participant 25 examples per class.
-    The source loader uses its full-dataset cache for requests over 300 IDs, so
-    each cohort is loaded in two smaller chunks to ensure these filters apply.
+    Both cohorts use IDs 1-306. Subjects are requested in two chunks because the
+    loader ignores its filters (using a full-dataset cache) for requests over 300 IDs.
     """
-    cohort_datasets: list[EmgDataset] = []
-    subject_chunks = (tuple(range(1, 301)), tuple(range(301, 307)))
-
-    for cohort_name in ("training", "testing"):
+    cohorts = []
+    for offset, cohort in ((0, "training"), (EPN_IDS_PER_COHORT, "testing")):
         chunks = [
             load_epn_data(
                 EPN_DATA,
                 gesture_sets=("trainingSamples",),
-                subjects=subject_ids,
-                subject_types=(cohort_name,),
+                subjects=tuple(ids),
+                subject_types=(cohort,),
             )
-            for subject_ids in subject_chunks
+            for ids in (range(1, 301), range(301, 307))
         ]
-        cohort_datasets.append(combine_datasets(chunks))
+        data = chunks[0].combine(chunks[1])
+        cohorts.append(
+            EmgDataset(
+                data=data.data,
+                labels=data.labels,
+                subjects=data.subjects + offset,
+                is_normalized=data.is_normalized,
+            )
+        )
+    return cohorts[0].combine(cohorts[1])
 
-    first_cohort, second_cohort = cohort_datasets
-    second_cohort = EmgDataset(
-        data=second_cohort.data,
-        labels=second_cohort.labels,
-        subjects=second_cohort.subjects + int(np.max(first_cohort.subjects)),
-        is_normalized=second_cohort.is_normalized,
-    )
-    return first_cohort.combine(second_cohort)
 
+def prepare_data(seed: int):
+    """Split gestures and ADLs by participant (80/10/10), then normalize.
 
-def split_adl_by_participant(seed: int) -> tuple[
-    EmgDataset, EmgDataset, EmgDataset, list[int], list[int], list[int]
-]:
-    """Load/window ADLs and assign whole participants to fixed splits."""
+    Returns (train, val, test, n_test_gesture_rows, train_gesture_people,
+    val_gesture_people, train_adl_people); each split is gestures followed by ADLs.
+    """
+    emg = preprocess_nm_data(load_epn())
+    train_emg, held_emg = emg.split(test_percentage=0.2, by_subject=True, random_seed=seed)
+    val_emg, test_emg = held_emg.split(test_percentage=0.5, by_subject=True, random_seed=seed + 1)
+
     random.seed(seed)
-    raw_adl = load_disco_adls(ADL_DATA)
     adl = split_disco_adls(
-        raw_adl,
-        window=(ADL_WINDOW_SIZE, ADL_WINDOW_SIZE),
-        step=ADL_WINDOW_STEP,
+        load_disco_adls(ADL_DATA), window=(ADL_WINDOW, ADL_WINDOW), step=ADL_STEP
     )
+    people = sorted(int(s) for s in np.unique(adl.subjects))
+    n = max(1, round(0.2 * len(people)))
+    adl_people = people[:-2 * n], people[-2 * n:-n], people[-n:]
+    assert adl_people[0], "ADL split leaves no training participants"
+    train_adl, val_adl, test_adl = (adl[np.isin(adl.subjects, p)] for p in adl_people)
 
-    participants = sorted(int(subject) for subject in np.unique(adl.subjects))
-    if len(participants) < 3:
-        raise ValueError("At least three ADL participants are required for the splits.")
-
-    test_count = max(1, round(len(participants) * 0.2))
-    validation_count = max(1, round(len(participants) * 0.2))
-    test_participants = participants[-test_count:]
-    validation_participants = participants[-(test_count + validation_count):-test_count]
-    train_participants = participants[:-(test_count + validation_count)]
-    if not train_participants:
-        raise ValueError("The ADL split leaves no training participants.")
-
-    train_adl = adl[np.isin(adl.subjects, train_participants)]
-    validation_adl = adl[np.isin(adl.subjects, validation_participants)]
-    test_adl = adl[np.isin(adl.subjects, test_participants)]
+    # Fit preprocessing on gesture training data only.
+    transform = Transform(HighPassFilter(), RestNormalizer())
+    transform.fit(train_emg)
+    t_train_emg, t_val_emg, t_test_emg, t_train_adl, t_val_adl, t_test_adl = (
+        transform(d) for d in (train_emg, val_emg, test_emg, train_adl, val_adl, test_adl)
+    )
     return (
-        train_adl,
-        validation_adl,
-        test_adl,
-        train_participants,
-        validation_participants,
-        test_participants,
-    )
-
-
-def prepare_data(seed: int) -> ExperimentData:
-    """Load, split by participant, and normalize gesture and ADL data."""
-    emg = preprocess_nm_data(load_epn_training_examples())
-    train_emg, held_emg = emg.split(
-        test_percentage=0.2,
-        by_subject=True,
-        random_seed=seed,
-    )
-    validation_emg, test_emg = held_emg.split(
-        test_percentage=0.5,
-        by_subject=True,
-        random_seed=seed + 1,
-    )
-
-    (
-        train_adl,
-        validation_adl,
-        test_adl,
-        train_adl_participants,
-        validation_adl_participants,
-        test_adl_participants,
-    ) = split_adl_by_participant(seed)
-
-    # Fit preprocessing only on gesture training data, matching model training.
-    transforms = Transform(HighPassFilter(), RestNormalizer())
-    transforms.fit(train_emg)
-
-    return ExperimentData(
-        train_emg=transforms(train_emg),
-        validation_emg=transforms(validation_emg),
-        test_emg=transforms(test_emg),
-        train_adl=transforms(train_adl),
-        validation_adl=transforms(validation_adl),
-        test_adl=transforms(test_adl),
-        train_adl_participants=train_adl_participants,
-        validation_adl_participants=validation_adl_participants,
-        test_adl_participants=test_adl_participants,
+        t_train_emg.combine(t_train_adl),
+        t_val_emg.combine(t_val_adl),
+        t_test_emg.combine(t_test_adl),
+        len(t_test_emg),
+        sorted(int(s) for s in np.unique(train_emg.subjects)),
+        sorted(int(s) for s in np.unique(val_emg.subjects)),
+        adl_people[0],
     )
 
 
 def remap_labels(dataset: EmgDataset, label_map: dict[int, int]) -> EmgDataset:
-    """Keep selected labels and map them to the requested class indices."""
-    mask = np.isin(dataset.labels, list(label_map))
-    selected = dataset[mask]
-    labels = np.asarray(
-        [label_map[int(label)] for label in selected.labels],
-        dtype=np.int32,
-    )
+    """Keep only labels in label_map, renumbered to the mapped class indices."""
+    dataset = dataset[np.isin(dataset.labels, list(label_map))]
     return EmgDataset(
-        data=selected.data,
-        labels=labels,
-        subjects=selected.subjects,
-        is_normalized=selected.is_normalized,
+        data=dataset.data,
+        labels=np.array([label_map[int(l)] for l in dataset.labels], dtype=np.int32),
+        subjects=dataset.subjects,
+        is_normalized=dataset.is_normalized,
     )
 
 
-def encode_dataset(model: DiscreteModel, dataset: EmgDataset) -> torch.Tensor:
-    """Cache the frozen model's features for each input example."""
+def encode(model: DiscreteModel, dataset: EmgDataset) -> torch.Tensor:
+    """Frozen-network features (through the last hidden layer) for each example."""
     windowed = model._get_windows(dataset)
-    loader = make_data_loader(
-        windowed.data,
-        windowed.labels,
-        batch_size=128,
-        shuffle=False,
-    )
-    network = model.net
-    device = next(network.parameters()).device
-    network.eval()
+    loader = make_data_loader(windowed.data, windowed.labels, batch_size=128, shuffle=False)
+    net = model.net.eval()
+    device = next(net.parameters()).device
 
-    batches: list[torch.Tensor] = []
+    batches = []
     with torch.no_grad():
         for inputs, _labels, lengths in loader:
-            inputs = inputs.to(device)
-            lengths = lengths.to(device)
-            features = network.forward_conv(inputs)
-            features = network.forward_temporal(features, lengths)
-            features = network.relu(network.initial_layer(features))
-            features = network.relu(network.layer1(features))
-            features = network.relu(network.layer2(features))
-            batches.append(features.cpu())
-    return torch.cat(batches, dim=0)
+            h = net.forward_temporal(net.forward_conv(inputs.to(device)), lengths.to(device))
+            for layer in (net.initial_layer, net.layer1, net.layer2):
+                h = net.relu(layer(h))
+            batches.append(h.cpu())
+    features = torch.cat(batches)
+    assert len(features) == len(dataset), "windowing changed the number of examples"
+    return features
 
 
-def balanced_class_weights(labels: torch.Tensor, class_count: int) -> torch.Tensor:
-    """Give each represented class equal total weight in the loss."""
-    counts = torch.bincount(labels, minlength=class_count).to(torch.float32)
-    represented = counts > 0
-    weights = torch.zeros(class_count, dtype=torch.float32)
-    weights[represented] = len(labels) / (
-        int(represented.sum()) * counts[represented]
-    )
-    return weights
-
-
-def macro_recall(
-    head: torch.nn.Module,
-    features: torch.Tensor,
-    labels: torch.Tensor,
-) -> float:
-    """Compute mean recall over the classes present in the labels."""
-    device = next(head.parameters()).device
+def macro_recall(head: torch.nn.Module, x: torch.Tensor, y: torch.Tensor) -> float:
+    """Mean recall over the classes present in y."""
     with torch.no_grad():
-        predictions = head(features.to(device)).argmax(dim=1).cpu()
-
-    recalls = []
-    for label in torch.unique(labels):
-        mask = labels == label
-        recalls.append(float((predictions[mask] == labels[mask]).float().mean()))
-    return float(np.mean(recalls)) if recalls else float("nan")
+        pred = head(x).argmax(1)
+    return float(np.mean([(pred[y == c] == c).float().mean().item() for c in y.unique()]))
 
 
-def train_output_layer(
-    model: DiscreteModel,
-    train_features: torch.Tensor,
-    train_labels: torch.Tensor,
-    validation_features: torch.Tensor,
-    validation_labels: torch.Tensor,
-    seed: int,
-) -> tuple[int, float]:
-    """Freeze the representation and train a new six-class output layer."""
-    network = model.net
-    for parameter in network.parameters():
-        parameter.requires_grad_(False)
-
-    device = next(network.parameters()).device
+def train_head(model, x, y, x_val, y_val, seed) -> tuple[int, float]:
+    """Freeze the network, train a new output layer; return (best epoch, best val macro recall)."""
+    net = model.net
+    device = next(net.parameters()).device
+    n_classes = len(gesture_mapping)
     torch.manual_seed(seed)
+
+    for p in net.parameters():
+        p.requires_grad_(False)
     model.config = model.config.create(
-        n_classes=len(gesture_mapping),
-        gestures=[name for name, label in sorted(gesture_mapping.items(), key=lambda x: x[1]) if label],
+        n_classes=n_classes, gestures=[name for name, label in GESTURES if label]
     )
-    network.config = model.config
-    network.output_layer = torch.nn.Linear(
-        network.config.mlp_layers[-1],
-        len(gesture_mapping),
-    ).to(device)
-    head = network.output_layer
-    for parameter in head.parameters():
-        parameter.requires_grad_(True)
+    net.config = model.config
+    head = torch.nn.Linear(net.config.mlp_layers[-1], n_classes).to(device)
+    net.output_layer = head
+
+    x, y, x_val, y_val = (t.to(device) for t in (x, y, x_val, y_val))
+    # Each represented class gets equal total weight in the loss.
+    counts = torch.bincount(y, minlength=n_classes).float()
+    present = counts > 0
+    weights = torch.where(
+        present, len(y) / (present.sum() * counts.clamp(min=1)), torch.zeros_like(counts)
+    )
 
     optimizer = torch.optim.Adam(head.parameters(), lr=1e-2)
-    weights = balanced_class_weights(train_labels, len(gesture_mapping)).to(device)
-    order_generator = torch.Generator(device="cpu").manual_seed(seed)
-    best_score = -1.0
-    best_epoch = 0
-    best_state = {key: value.detach().clone() for key, value in head.state_dict().items()}
-    stale_epochs = 0
-
-    for epoch in range(1, HEAD_MAX_EPOCHS + 1):
-        head.train()
-        order = torch.randperm(len(train_labels), generator=order_generator)
-        for start in range(0, len(order), HEAD_BATCH_SIZE):
-            indices = order[start:start + HEAD_BATCH_SIZE]
-            inputs = train_features[indices].to(device)
-            labels = train_labels[indices].to(device)
-
-            optimizer.zero_grad(set_to_none=True)
-            loss = F.cross_entropy(head(inputs), labels, weight=weights)
-            loss.backward()
+    shuffle = torch.Generator().manual_seed(seed)
+    best_score, best_epoch, best_state, stale = -1.0, 0, copy.deepcopy(head.state_dict()), 0
+    for epoch in range(1, HEAD_EPOCHS + 1):
+        for idx in torch.randperm(len(y), generator=shuffle).to(device).split(HEAD_BATCH):
+            optimizer.zero_grad()
+            F.cross_entropy(head(x[idx]), y[idx], weight=weights).backward()
             optimizer.step()
 
-        head.eval()
-        score = macro_recall(head, validation_features, validation_labels)
+        score = macro_recall(head, x_val, y_val)
         if score > best_score + 1e-6:
-            best_score = score
-            best_epoch = epoch
-            best_state = {
-                key: value.detach().clone()
-                for key, value in head.state_dict().items()
-            }
-            stale_epochs = 0
+            best_score, best_epoch, best_state, stale = score, epoch, copy.deepcopy(head.state_dict()), 0
         else:
-            stale_epochs += 1
-            if stale_epochs >= HEAD_EARLY_STOPPING_PATIENCE:
+            stale += 1
+            if stale >= HEAD_PATIENCE:
                 break
 
     head.load_state_dict(best_state)
-    head.eval()
     return best_epoch, best_score
 
 
-def score_model(
-    model: DiscreteModel,
-    features: torch.Tensor,
-    labels: np.ndarray,
-    target_label: int,
-    adl_mask: np.ndarray,
-) -> dict[str, int | float]:
-    """Report target recall/precision and false activations on other inputs."""
-    head = model.net.output_layer
-    device = next(head.parameters()).device
+def score_model(head, features, labels, target, adl_mask) -> dict[str, float]:
+    """Target recall/precision/F1, per-class recall, and false activations."""
     with torch.no_grad():
-        predictions = head(features.to(device)).argmax(dim=1).cpu().numpy()
+        pred = head(features.to(next(head.parameters()).device)).argmax(1).cpu().numpy()
+    hit = pred == labels
+    is_target = labels == target
 
-    target_mask = labels == target_label
-    target_hits = int(np.sum(predictions[target_mask] == target_label))
-    target_count = int(target_mask.sum())
-    target_predictions = predictions == target_label
-    target_false_positives = int(np.sum(target_predictions & ~target_mask))
-    target_precision = (
-        float(target_hits / int(target_predictions.sum()))
-        if target_predictions.any()
-        else 0.0
-    )
-    target_recall = float(target_hits / target_count) if target_count else float("nan")
-    target_f1 = (
-        2 * target_precision * target_recall / (target_precision + target_recall)
-        if target_precision + target_recall
-        else 0.0
-    )
+    true_positives = int((hit & is_target).sum())
+    precision = true_positives / max(int((pred == target).sum()), 1)
+    recall = true_positives / int(is_target.sum())
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
-    class_results: dict[str, int | float] = {}
-    other_gesture_recalls = []
-    all_gesture_hits = 0
-    all_gesture_count = 0
-    for name, label in gesture_mapping.items():
-        mask = labels == label
-        count = int(mask.sum())
-        hits = int(np.sum(predictions[mask] == label))
-        class_results[f"test_{name}_correct"] = hits
-        class_results[f"test_{name}_samples"] = count
-        class_results[f"test_{name}_recall"] = float(hits / count) if count else float("nan")
-        if label != gesture_mapping["noGesture"]:
-            all_gesture_hits += hits
-            all_gesture_count += count
-            if label != target_label and count:
-                other_gesture_recalls.append(hits / count)
-
-    no_gesture_mask = labels == gesture_mapping["noGesture"]
-    no_gesture_false_positives = int(np.sum(predictions[no_gesture_mask] != 0))
-    no_gesture_count = int(no_gesture_mask.sum())
-    adl_false_positives = int(np.sum(predictions[adl_mask] != 0))
-    adl_count = int(adl_mask.sum())
-    gesture_recall = all_gesture_hits / all_gesture_count if all_gesture_count else float("nan")
-
+    recalls = {name: float(hit[labels == label].mean()) for name, label in GESTURES}
+    rest = (labels == 0) & ~adl_mask  # EPN rest windows only; ADLs are scored separately
     return {
-        **class_results,
-        "target_recall": target_recall,
-        "target_precision": target_precision,
-        "target_f1": float(target_f1),
-        "target_false_positives": target_false_positives,
-        "target_test_samples": target_count,
-        "other_gestures_macro_recall": (
-            float(np.mean(other_gesture_recalls)) if other_gesture_recalls else float("nan")
+        "target_recall": recall,
+        "target_precision": precision,
+        "target_f1": f1,
+        "other_gestures_macro_recall": float(
+            np.mean([recalls[n] for n, l in GESTURES if l not in (0, target)])
         ),
-        "gesture_false_negative_rate": 1.0 - gesture_recall,
-        "no_gesture_false_positives": no_gesture_false_positives,
-        "no_gesture_samples": no_gesture_count,
-        "no_gesture_false_positive_rate": (
-            no_gesture_false_positives / no_gesture_count if no_gesture_count else float("nan")
-        ),
-        "adl_false_positives": adl_false_positives,
-        "adl_clips": adl_count,
-        "adl_false_positive_rate": (
-            adl_false_positives / adl_count if adl_count else float("nan")
-        ),
-        "test_accuracy": float(np.mean(predictions == labels)),
+        "no_gesture_false_positive_rate": float((pred[rest] != 0).mean()),
+        "adl_false_positive_rate": float((pred[adl_mask] != 0).mean()),
+        "test_accuracy": float(hit.mean()),
+        **{f"test_{name}_recall": r for name, r in recalls.items()},
     }
 
 
-def write_result(path: Path, row: dict[str, object]) -> None:
-    """Append one result row, writing the CSV header when needed."""
+def target_pool(data: EmgDataset, people: list[int], target: int, rng) -> dict[int, np.ndarray]:
+    """Per-person shuffled indices of target examples (slicing gives nested quotas)."""
+    return {
+        p: rng.permutation(np.flatnonzero((data.subjects == p) & (data.labels == target)))
+        for p in people
+    }
+
+
+def write_row(path: Path, row: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    needs_header = not path.exists() or path.stat().st_size == 0
+    is_new = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=list(row))
-        if needs_header:
+        if is_new:
             writer.writeheader()
         writer.writerow(row)
-
-
-def parse_integer_list(value: str, argument: str, *, allow_zero: bool) -> list[int]:
-    try:
-        numbers = sorted({int(part.strip()) for part in value.split(",") if part.strip()})
-    except ValueError as error:
-        raise argparse.ArgumentTypeError(f"{argument} must be comma-separated integers") from error
-    minimum = 0 if allow_zero else 1
-    if not numbers or numbers[0] < minimum:
-        requirement = "non-negative" if allow_zero else "positive"
-        raise argparse.ArgumentTypeError(f"{argument} must contain {requirement} integers")
-    return numbers
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--gestures", help="comma-separated target gestures (default: all)")
     parser.add_argument(
-        "--participant-counts",
-        default=",".join(map(str, PARTICIPANT_COUNTS)),
-        help="Number of target-gesture contributors to evaluate.",
+        "--output",
+        type=Path,
+        default=Path(f"exp/results/gesture_data_variation_{datetime.now():%Y%m%d_%H%M%S}.csv"),
     )
-    parser.add_argument(
-        "--trials-per-participant",
-        default=",".join(map(str, TRIALS_PER_PARTICIPANT)),
-        help="Target trials taken from each selected participant.",
-    )
-    parser.add_argument(
-        "--gestures",
-        help="Comma-separated target gestures; default runs every gesture.",
-    )
-    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    if args.repeats < 1:
-        parser.error("--repeats must be at least 1")
-    try:
-        participant_counts = parse_integer_list(
-            args.participant_counts,
-            "--participant-counts",
-            allow_zero=False,
-        )
-        trials_per_participant = parse_integer_list(
-            args.trials_per_participant,
-            "--trials-per-participant",
-            allow_zero=False,
-        )
-    except argparse.ArgumentTypeError as error:
-        parser.error(str(error))
-    if trials_per_participant[-1] > 25:
-        parser.error("--trials-per-participant cannot exceed the 25 available examples per person")
+    valid = [name for name, label in GESTURES if label]
+    wanted = [g.strip() for g in args.gestures.split(",")] if args.gestures else valid
+    if not set(wanted) <= set(valid):
+        parser.error(f"--gestures must be chosen from: {', '.join(valid)}")
+    targets = [(name, label) for name, label in GESTURES if name in wanted]
 
-    requested_gestures = None
-    if args.gestures:
-        requested_gestures = [name.strip() for name in args.gestures.split(",") if name.strip()]
-        valid_gestures = {name for name, label in gesture_mapping.items() if label != 0}
-        if not requested_gestures or not set(requested_gestures).issubset(valid_gestures):
-            parser.error(f"--gestures must be selected from: {', '.join(sorted(valid_gestures))}")
+    train, val, test, n_test_emg, train_people, val_people, train_adl_people = prepare_data(args.seed)
 
-    output = args.output or Path("exp/results") / (
-        f"gesture_data_variation_{datetime.now():%Y%m%d_%H%M%S}.csv"
+    # Fail now rather than after training a base model.
+    if max(PEOPLE) > len(train_people):
+        parser.error(f"Need {max(PEOPLE)} training participants, have {len(train_people)}.")
+    for split in (train, val):
+        per_person = Counter(zip(split.subjects.tolist(), split.labels.tolist()))
+        if min(n for (_, label), n in per_person.items() if label) < max(TRIALS):
+            parser.error(f"Some participants have fewer than {max(TRIALS)} examples of a gesture.")
+    print(f"Participants (train/val): {len(train_people)}/{len(val_people)}; results: {args.output}")
+
+    test_labels = test.labels.astype(np.int64)
+    test_adl_mask = np.arange(len(test)) >= n_test_emg
+    y_train, y_val = (torch.as_tensor(d.labels.astype(np.int64)) for d in (train, val))
+    customers = TrainData(
+        emg=[f"user{s}" for s in train_people], disco=[f"S{s}" for s in train_adl_people]
     )
-    data = prepare_data(args.seed)
-
-    train_participants = sorted(int(value) for value in np.unique(data.train_emg.subjects))
-    validation_participants = sorted(
-        int(value) for value in np.unique(data.validation_emg.subjects)
-    )
-    test_participants = sorted(int(value) for value in np.unique(data.test_emg.subjects))
-    if participant_counts[-1] > len(train_participants):
-        parser.error(
-            f"Requested {participant_counts[-1]} target contributors, but only "
-            f"{len(train_participants)} are in the training split."
-        )
-
-    print(f"Training gesture participants: {len(train_participants)}")
-    print(f"Validation gesture participants: {len(validation_participants)}")
-    print(f"Test gesture participants: {len(test_participants)}")
-    print(f"Participant counts: {participant_counts}")
-    print(f"Target trials per participant: {trials_per_participant}")
-    print(f"Repeats: {args.repeats}")
-    print(f"Results: {output}")
-
-    # All non-target gesture and ADL examples stay fixed. Only target examples
-    # are varied; each selected participant contributes the same quota.
-    train_all = data.train_emg.combine(data.train_adl)
-    validation_all = data.validation_emg.combine(data.validation_adl)
-    test_all = data.test_emg.combine(data.test_adl)
-    test_adl_mask = np.concatenate(
-        [
-            np.zeros(len(data.test_emg), dtype=bool),
-            np.ones(len(data.test_adl), dtype=bool),
-        ]
-    )
-    train_labels = torch.as_tensor(train_all.labels.astype(np.int64))
-    validation_labels = torch.as_tensor(validation_all.labels.astype(np.int64))
-    test_labels = test_all.labels.astype(np.int64)
-    ordered_gestures = sorted(gesture_mapping.items(), key=lambda item: item[1])
-    targets = [(name, label) for name, label in ordered_gestures if label != 0]
-    if requested_gestures:
-        targets = [target for target in targets if target[0] in requested_gestures]
 
     for repeat in range(args.repeats):
-        participant_rng = np.random.default_rng(args.seed + repeat)
-        participant_order = [
-            int(value) for value in participant_rng.permutation(train_participants)
-        ]
+        rng = np.random.default_rng(args.seed + repeat)
+        train_order = rng.permutation(train_people).tolist()
+        val_order = rng.permutation(val_people).tolist()
 
-        for target_name, target_label in targets:
-            other_gestures = [
-                (name, label) for name, label in ordered_gestures if label != target_label
-            ]
-            base_label_map = {
-                old_label: new_label
-                for new_label, (_name, old_label) in enumerate(other_gestures)
-            }
-            base_train = remap_labels(train_all, base_label_map)
-            base_validation = remap_labels(validation_all, base_label_map)
-            customers = TrainData(
-                emg=[f"user{subject}" for subject in train_participants],
-                disco=[f"S{subject}" for subject in data.train_adl_participants],
-            )
-
-            base_seed = args.seed + repeat * 10000 + target_label
+        for target_name, target in targets:
+            # Base model: trained on every gesture except the target (plus ADLs).
+            base_seed = args.seed + repeat * 10000 + target
             seed_everything(base_seed, workers=True)
-            base_config = DiscreteClassifierConfig.default_lite().create(
-                n_classes=len(base_label_map),
-                window_size=GESTURE_WINDOW_SIZE,
-                increment=GESTURE_WINDOW_INCREMENT,
-                gestures=[name for name, _label in other_gestures if name != "noGesture"],
+            others = [(name, label) for name, label in GESTURES if label != target]
+            label_map = {label: i for i, (_, label) in enumerate(others)}
+            config = DiscreteClassifierConfig.default_lite().create(
+                n_classes=len(others),
+                window_size=GESTURE_WINDOW,
+                increment=GESTURE_INCREMENT,
+                gestures=[name for name, label in others if label],
             )
-            model = DiscreteModel(base_config)
-            model.fit(base_train, base_validation, customers=customers)
+            model = DiscreteModel(config)
+            model.fit(remap_labels(train, label_map), remap_labels(val, label_map), customers=customers)
+            x_train, x_val, x_test = (encode(model, d) for d in (train, val, test))
 
-            train_features = encode_dataset(model, train_all)
-            validation_features = encode_dataset(model, validation_all)
-            test_features = encode_dataset(model, test_all)
+            pick = np.random.default_rng(base_seed)
+            train_pool = target_pool(train, train_order, target, pick)
+            val_pool = target_pool(val, val_order, target, pick)
+            train_rest = np.flatnonzero(train.labels != target)
+            val_rest = np.flatnonzero(val.labels != target)
 
-            for participant_count in participant_counts:
-                selected_participants = participant_order[:participant_count]
-                target_rng = np.random.default_rng(
-                    args.seed + repeat * 100000 + target_label
+            for people, trials in itertools.product(PEOPLE, TRIALS):
+                train_target = np.concatenate([train_pool[p][:trials] for p in train_order[:people]])
+                val_target = np.concatenate([val_pool[p][:trials] for p in val_order[:people]])
+                train_idx = np.concatenate([train_rest, train_target])
+                val_idx = np.concatenate([val_rest, val_target])
+
+                seed = base_seed + 100 * people + trials
+                epoch, val_recall = train_head(
+                    model, x_train[train_idx], y_train[train_idx], x_val[val_idx], y_val[val_idx], seed
                 )
-                indices_by_participant: dict[int, list[int]] = {}
-                for participant in selected_participants:
-                    indices = np.flatnonzero(
-                        (train_all.subjects == participant)
-                        & (train_all.labels == target_label)
-                    )
-                    if len(indices) < trials_per_participant[-1]:
-                        raise ValueError(
-                            f"Participant {participant} has {len(indices)} examples for "
-                            f"{target_name}; {trials_per_participant[-1]} are required."
-                        )
-                    indices_by_participant[participant] = target_rng.permutation(
-                        indices
-                    ).astype(int).tolist()
-
-                for quota in trials_per_participant:
-                    selected_target = {
-                        index
-                        for indices in indices_by_participant.values()
-                        for index in indices[:quota]
-                    }
-                    training_indices = [
-                        index
-                        for index, label in enumerate(train_all.labels)
-                        if int(label) != target_label or index in selected_target
-                    ]
-                    epoch, validation_recall = train_output_layer(
-                        model,
-                        train_features[training_indices],
-                        train_labels[training_indices],
-                        validation_features,
-                        validation_labels,
-                        seed=args.seed + repeat * 100000 + target_label * 1000 + participant_count,
-                    )
-                    metrics = score_model(
-                        model,
-                        test_features,
-                        test_labels,
-                        target_label,
-                        test_adl_mask,
-                    )
-                    row: dict[str, object] = {
-                        "repeat": repeat,
-                        "participant_count": participant_count,
-                        "target_participants": ";".join(map(str, selected_participants)),
-                        "validation_participants": ";".join(map(str, validation_participants)),
-                        "test_participants": ";".join(map(str, test_participants)),
-                        "target_gesture": target_name,
-                        "target_trials_per_participant": quota,
-                        "target_train_trials": len(selected_target),
-                        "head_non_target_trials": int(
-                            np.sum(train_all.labels != target_label)
-                        ),
-                        "head_total_trials": len(training_indices),
-                        "validation_macro_recall": validation_recall,
-                        "head_best_epoch": epoch,
-                        "seed": args.seed + repeat * 100000 + target_label * 1000 + participant_count,
-                        **metrics,
-                    }
-                    write_result(output, row)
-                    print(
-                        f"repeat={repeat}; target={target_name}; "
-                        f"people={participant_count}; trials/person={quota}; "
-                        f"total target trials={len(selected_target)}; "
-                        f"recall={metrics['target_recall']:.3f}"
-                    )
+                row = {
+                    "repeat": repeat,
+                    "target_gesture": target_name,
+                    "participant_count": people,
+                    "target_trials_per_participant": trials,
+                    "target_train_trials": len(train_target),
+                    "validation_target_trials": len(val_target),
+                    "validation_macro_recall": val_recall,
+                    "head_best_epoch": epoch,
+                    "seed": seed,
+                    **score_model(model.net.output_layer, x_test, test_labels, target, test_adl_mask),
+                }
+                write_row(args.output, row)
+                print(
+                    f"repeat={repeat} target={target_name} people={people} trials={trials} "
+                    f"(train {len(train_target)}, val {len(val_target)}) recall={row['target_recall']:.3f}"
+                )
 
 
 if __name__ == "__main__":
