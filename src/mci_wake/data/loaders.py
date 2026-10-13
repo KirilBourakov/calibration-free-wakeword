@@ -115,7 +115,8 @@ def load_disco_adls(
 
         for file_path in sub_path.glob("*.csv"):
             if file_path.stem not in ADL_ACTIVITY_MAPPING:
-                raise ValueError(f"Unknown ADL activity filename: {file_path.name}")
+                print(f"WARNING: skipping unmapped ADL activity file: {file_path}")
+                continue
             data = np.loadtxt(file_path, delimiter=',')
 
             # Guard against 1D arrays and filter out short recordings early
